@@ -1,3 +1,5 @@
+import Lib
+
 import Data.Array.IO 
 import Data.Array
 import Data.Maybe
@@ -12,7 +14,6 @@ type MBoard = IOArray Index Cell
 type IBoard = Array Index Cell
 
 type Constraints = [Constraint]
-type Constraint = [Int]
 
 type Line = (Bool,Int) -- (direction::Bool, Number::Int)
 
@@ -78,33 +79,6 @@ adaptLines line xs =
       g ((Just False):xs) = shiftL (g xs) 1
       g (_:xs) = 1+(shiftL (g xs) 1)
               
---createCandidates :: Int -> Constraint -> [Candidate]
---createCandidates 0 [] = [0]
---createCandidates num [] = [0]
---createCandidates num constraint@(x:xs) = 
---    if (num < x) then []
---    else if (L.null xs) && (x == num) then [2^num - 1]
---         else blackList ++ whiteList
---        where 
---          blackList = map (\n -> 2^x-1 + 2^(x+1)*n) $ createCandidates (num-x-1) xs
---          whiteList = map (\n -> 2*n ) $ createCandidates (num-1) constraint
-
-createCandidates_ :: Int -> Constraint -> [[Bool]]
-createCandidates_ num [] = [L.replicate num False]
-createCandidates_ num constraint@(x:xs) =
-    case compare num (volume constraint) of
-      LT -> []
-      EQ -> if L.null xs then [L.replicate x True] else blackList
-      GT -> blackList ++ whiteList
-     where 
-       blackList = map (\n -> f x (False:n)) $ createCandidates_ (num-x-1) xs
-       whiteList = map (\n -> False:n) $ createCandidates_ (num-1) constraint
-       f 0 xs = xs
-       f n xs = True:(f (n-1) xs)
-
-volume :: Constraint -> Int
-volume = sum . (intersperse 1)
-
 createCandidates :: Int -> Constraint -> [Candidate]
 createCandidates num [] = [0]
 createCandidates num constraint@(x:xs) =
