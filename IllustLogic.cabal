@@ -35,6 +35,7 @@ test-suite IllustLogic-test
   main-is:             Spec.hs
   build-depends:       base
                      , IllustLogic
+                     , hspec
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   default-language:    Haskell2010
 
