@@ -1,14 +1,17 @@
 module Lib
     ( Constraint
-    , createCandidates_
+    , createCandidates
     , volume
     ) where
 
 import Data.List as L (replicate, null, intersperse)
 
-type Constraint = [Int]
+type Constraint = ([Int],(Int,Int))
 
-createCandidates_ :: Int -> Constraint -> [[Bool]]
+createCandidates :: Constraint -> [[Bool]]
+createCandidates (cs,(lb,ub)) = createCandidates_ (ub-lb+1) cs
+
+createCandidates_ :: Int -> [Int] -> [[Bool]]
 createCandidates_ num [] = [L.replicate num False]
 createCandidates_ num constraint@(x:xs) =
     case compare num (volume constraint) of
@@ -21,6 +24,6 @@ createCandidates_ num constraint@(x:xs) =
        f 0 xs = xs
        f n xs = True:(f (n-1) xs)
 
-volume :: Constraint -> Int
+volume :: [Int] -> Int
 volume = sum . (intersperse 1)
 
