@@ -8,12 +8,9 @@ import Data.Bits (complement, (.&.), (.|.), shiftL)
 import Data.Sequence as S
 import Data.List as L (sortBy, groupBy, zipWith, replicate, null, reverse, splitAt, zip, foldl1',intersperse)
 
-type Cell = Maybe Bool
-type Index = (Int, Int)
 type MBoard = IOArray Index Cell
 type IBoard = Array Index Cell
 
-type Constraints = [Constraint]
 type MConstraints = IOArray Int Constraints
 type IConstraints = Array Int Constraints
 
@@ -48,67 +45,10 @@ thawProblem (ib,irc,icc) = do
   mcc <- thaw icc
   return (mb,mrc,mcc)
 
-toBoolList :: Int -> Candidate -> [Bool]
-toBoolList 0 _ = []
-toBoolList num c = let (d,m) = divMod c 2 in (m==1):(toBoolList (num-1) d)
-
 toCandidate :: [Bool] -> Candidate
 toCandidate [] = 0
 toCandidate (x:xs) = if x then 1 + (shiftL (toCandidate xs) 1) else (shiftL (toCandidate xs) 1)
                                     
-adaptLine_ :: [Cell] -> [Bool] -> Bool
-adaptLine_ line xs = 
-    and $ L.zipWith f line xs
-        where
-          f (Just True) False = False
-          f (Just False) True = False
-          f _ _ = True
-
-adaptLine :: (Candidate,Candidate) -> Candidate -> Bool
-adaptLine p@(ts,fs) xs =
-    (ts == (ts .&. xs)) && (fs == (fs .|. xs) )
-
-              
-adaptLines :: [Cell] -> [Candidate] -> [Candidate]
-adaptLines line xs =
-    let p = (f line, g line) in
-    Prelude.filter (adaptLine p) xs
-    where
-      f [] = 0
-      f ((Just True):xs) = 1+(shiftL (f xs) 1)
-      f (_:xs) = shiftL (f xs) 1
-      g [] = 0
-      g ((Just False):xs) = shiftL (g xs) 1
-      g (_:xs) = 1+(shiftL (g xs) 1)
-              
-labeling :: [Bool] -> [Int]
-labeling list = f list 0 
-    where
-      f [] cur = []
-      f (x:xs) cur = if (odd cur) == x then cur : (f xs cur) else (cur+1):(f xs (cur+1))
-
-equalRow ((a,_),_) ((b,_),_) = a==b
-
-rewriteLine :: [((Index,Cell),Cell)] -> [(Index,Cell)]
-rewriteLine [] = []
-rewriteLine (x:xs) =
-    let (cell,new) = x in
-    if (isNothing (snd cell)) && (isJust new) then (fst cell,new):(rewriteLine xs) 
-    else rewriteLine xs
-
-logicalLineStep :: [(Index,Cell)] -> [Candidate] -> Maybe [(Index,Cell)]
-logicalLineStep cells candidates = 
-    if (L.null candidates) then Nothing
-    else let headNums = labeling $ toBoolList len $ head candidates in
-         let tailNums = labeling $ toBoolList len $ last candidates in
-         let newLine = L.zipWith match headNums tailNums in
-         Just (rewriteLine $ L.zip cells newLine)
-    where
-      len = Prelude.length cells
-      match a b = 
-          if a == b then Just ( odd a )
-          else Nothing
-
 createLineFromBoard :: [(Index,Cell)] -> Bool -> Int -> [(Index,Cell)]
 createLineFromBoard elements direction index =
     Prelude.filter equalFunc elements
@@ -117,30 +57,27 @@ createLineFromBoard elements direction index =
       equalRowFunc ((a,_),_) = index == a
       equalColFunc ((_,a),_) = index == a
 
-createNewLine :: MConstraints -> Int -> [(Index,Cell)] -> IO (Maybe [(Index,Cell)])
-createNewLine constraints num lineCell =
-    let len = Prelude.length lineCell in
-    let match a b = if a == b then Just (odd a) else Nothing in
-    let currentCells = map snd lineCell in
-    do
-      constraints_ <- readArray constraints num
-      let constraint = head constraints_
-      let can = createCandidates constraint
-      let c = Prelude.filter (\n -> adaptLine_ currentCells n) can
-      let headLine = labeling $ head c
-      let revConstraint = (L.reverse $ fst constraint, snd constraint)
-      let cc = Prelude.filter (\n -> adaptLine_ (L.reverse currentCells) n) (createCandidates revConstraint)
-      let tailLine = labeling $ L.reverse $ head cc
-      if L.null c then return Nothing
-      else let line = L.zipWith match headLine tailLine in
-           return $ Just $ rewriteLine (L.zip lineCell line)
-             
-                               
+createNewLine__ :: Constraints -> [(Index,Cell)] -> Maybe ([(Index,Cell)], Constraints)
+createNewLine__ constraints lineCell = 
+    let ret = map (solveConstraint lineCell) constraints in
+    if any isNothing ret then Nothing
+    else let a = map fromJust ret in 
+         Just (concat $ map fst a, concat $ map snd a)
+
+createNewLine_ :: MConstraints -> Int -> [(Index,Cell)] -> IO (Maybe [(Index,Cell)])             
+createNewLine_ mc num lineCell = do
+    constraints <- readArray mc num
+    case createNewLine__ constraints lineCell of
+        Nothing -> return Nothing
+        Just (newCells, newConstraints) -> do
+            writeArray mc num newConstraints
+            return (Just newCells)
+
 logicalLinesStep :: MProblem -> Line -> IO (Maybe (MProblem, [Line]))
 logicalLinesStep problem@(mb,rc,cc) line@(direction,num) = do
     elems <- getAssocs mb
     let lineCell = createLineFromBoard elems direction num
-    newCells <- createNewLine constraint num lineCell
+    newCells <- createNewLine_ constraint num lineCell
     case newCells of
       Nothing -> return Nothing
       Just rewriteCells -> do
@@ -170,7 +107,7 @@ logicalStep problem@(mb,rc,cc) seql =
                       insertLine ls (x:xs) = if elem x ls then insertLine ls xs else insertLine (ls |> x) xs
   
 convertCandidate :: Constraint -> [Cell] -> [Candidate]
-convertCandidate constraint line = map toCandidate $ Prelude.filter (adaptLine_ line) $ createCandidates constraint
+convertCandidate constraint line = map toCandidate $ Prelude.filter (adaptLine line) $ createCandidates constraint
 
 estimateStep :: MProblem -> IO [(MProblem,Seq Line)]
 estimateStep mproblem = undefined
