@@ -57,17 +57,13 @@ createLineFromBoard elements direction index =
       equalRowFunc ((a,_),_) = index == a
       equalColFunc ((_,a),_) = index == a
 
-createNewLine__ :: Constraints -> [(Index,Cell)] -> Maybe ([(Index,Cell)], Constraints)
-createNewLine__ constraints lineCell = 
-    let ret = map (solveConstraint lineCell) constraints in
-    if any isNothing ret then Nothing
-    else let a = map fromJust ret in 
-         Just (concat $ map fst a, concat $ map snd a)
 
 createNewLine_ :: MConstraints -> Int -> [(Index,Cell)] -> IO (Maybe [(Index,Cell)])             
 createNewLine_ mc num lineCell = do
     constraints <- readArray mc num
-    case createNewLine__ constraints lineCell of
+    let newLine = createNewLine lineCell constraints
+--    print (constraints,lineCell,newLine)
+    case newLine of
         Nothing -> return Nothing
         Just (newCells, newConstraints) -> do
             writeArray mc num newConstraints
@@ -82,7 +78,7 @@ logicalLinesStep problem@(mb,rc,cc) line@(direction,num) = do
       Nothing -> return Nothing
       Just rewriteCells -> do
         newLines <- mapM (writeCell mb) rewriteCells
---        if L.null newLines then return () else printArray mb
+        if L.null newLines then return () else printArray mb
         return (Just (problem, newLines))
      where
        constraint = if direction then rc else cc
