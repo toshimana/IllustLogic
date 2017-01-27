@@ -20,8 +20,7 @@ type Constraint = ([Int],(Int,Int))
 type Constraints = [Constraint]
 
 adaptLine :: [Cell] -> [Bool] -> Bool
-adaptLine line xs = 
-    and $ L.zipWith f line xs
+adaptLine line xs = and $ L.zipWith f line xs
         where
           f (Just True) False = False
           f (Just False) True = False
@@ -58,9 +57,7 @@ match _ [] = []
 match (x:xs) (y:ys) = let z = if x == y then Just x else Nothing in z : (match xs ys)
 
 solveConstraint :: [(Index,Cell)] -> Constraint -> Maybe ([(Index,Cell)], Constraints)
-solveConstraint cells constraint@(xs,(lb,ub)) = 
-    if null c then Nothing
-    else Just (newCells,newConstraint) 
+solveConstraint cells constraint@(xs,(lb,ub)) = if null c then Nothing else Just (newCells,newConstraint) 
     where
         targetCells = drop (lb-1) $ take (ub) cells
         targets = map snd targetCells
