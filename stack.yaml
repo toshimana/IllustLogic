@@ -15,7 +15,8 @@
 # resolver:
 #  name: custom-snapshot
 #  location: "./custom-snapshot.yaml"
-resolver: lts-7.16
+resolver: lts-7.19
+# resolver: lts-6.27
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -44,7 +45,7 @@ extra-deps: []
 # Override default flag values for local packages and extra-deps
 flags: {}
 
-# Extra package databases containing global packages
+# Extra package databases containing global package
 extra-package-dbs: []
 
 # Control whether we use the GHC we find on the path
