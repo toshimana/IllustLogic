@@ -23,8 +23,7 @@ type Constraints = [Constraint]
 adaptLine :: [Cell] -> [Bool] -> Bool
 adaptLine line xs = and $ L.zipWith f line xs
         where
-          f (Just True) False = False
-          f (Just False) True = False
+          f (Just a) b = a==b
           f _ _ = True
 
 labeling :: [Bool] -> [Int]
@@ -34,20 +33,18 @@ labeling list = f list 0
       f (x:xs) cur = if (odd cur) == x then cur : (f xs cur) else (cur+1):(f xs (cur+1))
 
 createCandidates :: Constraint -> [[Bool]]
-createCandidates (cs,(lb,ub)) = createCandidates_ (ub-lb+1) cs
+createCandidates (cs,(lb,ub)) = createCandidates_ (ub-lb+1) cs (volume cs)
 
-createCandidates_ :: Int -> [Int] -> [[Bool]]
-createCandidates_ num [] = [L.replicate num False]
-createCandidates_ num constraint@(x:xs) =
-    case compare num (volume constraint) of
+createCandidates_ :: Int -> [Int] -> Int -> [[Bool]]
+createCandidates_ num [] _ = [L.replicate num False]
+createCandidates_ num constraint@(x:xs) vol =
+    case compare num vol of
       LT -> []
       EQ -> if L.null xs then [L.replicate x True] else blackList
       GT -> blackList ++ whiteList
      where 
-       blackList = Prelude.map (\n -> f x (False:n)) $ createCandidates_ (num-x-1) xs
-       whiteList = Prelude.map (\n -> False:n) $ createCandidates_ (num-1) constraint
-       f 0 xs = xs
-       f n xs = True:(f (n-1) xs)
+       blackList = Prelude.map (\n -> (L.replicate x True) ++ (False:n) ) $ createCandidates_ (num-x-1) xs (vol-x-1)
+       whiteList = Prelude.map (\n -> False:n) $ createCandidates_ (num-1) constraint vol
 
 volume :: [Int] -> Int
 volume = sum . (intersperse 1)
@@ -63,9 +60,10 @@ solveConstraint cells constraint@(xs,(lb,ub)) = if L.null c then Nothing else Ju
         targetCells = drop (lb-1) $ take (ub) cells
         targets = Prelude.map snd targetCells
         len = ub - lb + 1
-        c = Prelude.filter (adaptLine targets) (createCandidates_ len xs)
+        vol = volume xs
+        c = Prelude.filter (adaptLine targets) (createCandidates_ len xs vol)
         candidates = labeling $ head c 
-        revCandidates = labeling $ reverse $ head $ Prelude.filter (adaptLine (reverse targets)) (createCandidates_ len (reverse xs))
+        revCandidates = labeling $ reverse $ head $ Prelude.filter (adaptLine (reverse targets)) (createCandidates_ len (reverse xs) vol)
         line = match candidates revCandidates
         newline = Prelude.map (maybe Nothing (\n -> Just (odd n)) ) line
         newCells = L.foldl' (\cur -> \((i,c),n) -> if isJust n && c /= n  then (i,n):cur else cur) [] (zip targetCells newline)
