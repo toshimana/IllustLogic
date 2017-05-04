@@ -8,6 +8,7 @@ module Lib
     , createCandidates
     , solveConstraint
     , volume
+    , cvolume
     , createNewLine
     ) where
 
@@ -48,6 +49,18 @@ createCandidates_ num constraint@(x:xs) vol =
 
 volume :: [Int] -> Int
 volume = sum . (intersperse 1)
+
+cvolume :: [Int] -> Int -> Int
+cvolume xs s =
+    let box = length xs + 1 in
+    let ball = s - volume xs in
+    f box ball
+    where 
+        f _ 0 = 1
+        f 1 ball = 1
+        f box 1 = box
+        f box ball = L.foldl' (\cur elt-> cur + f (box-1) (ball-elt)) 0 [0..ball]
+
 
 match :: [Int] -> [Int] -> [Maybe Int]
 match [] _ = []

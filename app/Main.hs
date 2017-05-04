@@ -99,7 +99,8 @@ estimateStep mproblem@(mb,mrc,mcc) = do
   iproblem@(ib,irc,icc) <- freezeProblem mproblem
   Prelude.mapM ( g iproblem bl ) newCells
     where
-      f (_,_,c) = Prelude.length $ createCandidates c
+--      f (_,_,c) = Prelude.length $ createCandidates c
+      f (_,_,(cs,(lb,ub))) = cvolume cs (ub-lb+1)
       g iproblem direction xs = do
         mp@(mb,rc,cc) <- thawProblem iproblem
         newLines <- Prelude.mapM (writeCell mb direction) (Prelude.map (\(i,c) -> (i,Just c)) xs)
