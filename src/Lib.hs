@@ -15,10 +15,11 @@ module Lib
 import Data.List as L (replicate, null, intersperse, zipWith, foldl', partition)
 import Data.Maybe
 import Data.Set as T
+import Range
 
 type Cell = Maybe Bool
-type Index = (Int, Int)
-type Constraint = ([Int],(Int,Int))
+type Index = (Int,Int)
+type Constraint = ([Int],Range)
 type Constraints = [Constraint]
 
 adaptLine :: [Cell] -> [Bool] -> Bool
@@ -34,7 +35,7 @@ labeling list = f list 0
       f (x:xs) cur = if (odd cur) == x then cur : (f xs cur) else (cur+1):(f xs (cur+1))
 
 createCandidates :: Constraint -> [[Bool]]
-createCandidates (cs,(lb,ub)) = createCandidates_ (ub-lb+1) cs (volume cs)
+createCandidates (cs,Range lb ub) = createCandidates_ (ub-lb+1) cs (volume cs)
 
 createCandidates_ :: Int -> [Int] -> Int -> [[Bool]]
 createCandidates_ num [] _ = [L.replicate num False]
@@ -68,7 +69,7 @@ match _ [] = []
 match (x:xs) (y:ys) = let z = if x == y then Just x else Nothing in z : (match xs ys)
 
 solveConstraint :: [(Index,Cell)] -> Constraint -> Maybe ([(Index,Cell)], Constraints)
-solveConstraint cells constraint@(xs,(lb,ub)) = if L.null c then Nothing else Just (newCells,newConstraint) 
+solveConstraint cells constraint@(xs,bound@(Range lb ub)) = if L.null c then Nothing else Just (newCells,newConstraint) 
     where
         targetCells = drop (lb-1) $ take (ub) cells
         targets = Prelude.map snd targetCells
@@ -81,13 +82,13 @@ solveConstraint cells constraint@(xs,(lb,ub)) = if L.null c then Nothing else Ju
         newline = Prelude.map (maybe Nothing (\n -> Just (odd n)) ) line
         newCells = L.foldl' (\cur -> \((i,c),n) -> if isJust n && c /= n  then (i,n):cur else cur) [] (zip targetCells newline)
         l = Prelude.map (\(n,i) -> (div (fromJust n) 2,i)) $ Prelude.filter (maybe False even . fst) $ zip line [lb..ub]
-        newConstraint = Prelude.filter (\(n,(lb,ub))-> volume n /= (ub-lb+1)) $ Prelude.filter (not.(L.null).fst) $ createNewConstraint constraint l
+        newConstraint = Prelude.filter (\(n,Range lb ub)-> volume n /= (ub-lb+1)) $ Prelude.filter (not.(L.null).fst) $ createNewConstraint constraint l
         createNewConstraint xs [] = [xs]
-        createNewConstraint (xs,(lb,ub)) ((c,i):cs) = let (a,b) = splitAt c xs in (a,(lb,i-1)) : createNewConstraint (b,(i+1,ub)) (Prelude.map (\(n,j) -> (n-c,j)) cs)
+        createNewConstraint (xs,Range lb ub) ((c,i):cs) = let (a,b) = splitAt c xs in (a,Range lb (i-1)) : createNewConstraint (b,Range (i+1) ub) (Prelude.map (\(n,j) -> (n-c,j)) cs)
 
 createNewLine :: [(Index,Cell)] -> Set Int -> Constraints -> Maybe ([(Index,Cell)], Constraints)
 createNewLine lineCell set constraints = 
-    let (targets, outOfTargets) = L.partition (\(_,(lb,ub)) -> any (\n -> member n set) [lb..ub]) constraints in 
+    let (targets, outOfTargets) = L.partition (\(_,Range lb ub) -> any (\n -> member n set) [lb..ub]) constraints in 
     let ret = Prelude.map (solveConstraint lineCell) targets in
     if any isNothing ret then Nothing
     else let a = Prelude.map fromJust ret in 

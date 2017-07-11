@@ -7,6 +7,7 @@ import Data.Set as T
 import Data.Bool (bool)
 import Data.Sequence as S
 import Data.List as L (sortBy, groupBy, zipWith, replicate, null, reverse, splitAt, zip, foldl1',foldl',intersperse, minimumBy, delete)
+import Range
 
 type MBoard = IOArray Index Cell
 type IBoard = Array Index Cell
@@ -24,7 +25,7 @@ type IProblem = (IBoard, IConstraints, IConstraints)
     
 inputdata :: [String] -> ([Constraints],[Constraints])
 inputdata cs = 
-    (Prelude.map (\n -> [(n,(1,Prelude.length cc))]) rc, Prelude.map (\n -> [(n, (1,Prelude.length rc))]) cc)
+    (Prelude.map (\n -> [(n,Range (1::Int) (Prelude.length cc))]) rc, Prelude.map (\n -> [(n, Range (1::Int) (Prelude.length rc))]) cc)
     where
       rc = Prelude.map g rowStr
       cc = Prelude.map g colStr
@@ -48,12 +49,12 @@ createLineFromBoard elements direction index =
       equalColFunc ((_,a),_) = index == a
 
 createNewLine_ :: MConstraints -> Int -> Set Int -> [(Index,Cell)] -> IO (Maybe [(Index,Cell)])             
-createNewLine_ mc num set lineCell = do
-    constraints <- readArray mc num
-    maybe (return Nothing) (f mc num) (createNewLine lineCell set constraints)
+createNewLine_ mc linenum set lineCell = do
+    constraints <- readArray mc linenum
+    maybe (return Nothing) (rewriteNewCell mc linenum) (createNewLine lineCell set constraints)
       where
-        f mc num (newCells, newConstraints) = do
-          writeArray mc num newConstraints
+        rewriteNewCell mc linenum (newCells, newConstraints) = do
+          writeArray mc linenum newConstraints
           return (Just newCells)
 
 writeCell :: MBoard -> Bool -> (Index,Cell) -> IO (Bool, Int, Int)
@@ -65,9 +66,9 @@ logicalLinesStep :: MProblem -> Line -> IO (Maybe (MProblem, [(Bool,Int,Int)]))
 logicalLinesStep problem@(mb,rc,cc) line@(direction,num,set) = do
     elems <- getAssocs mb
     let lineCell = createLineFromBoard elems direction num
-    createNewLine_ (bool cc rc direction) num set lineCell >>= maybe (return Nothing) f
+    createNewLine_ (bool cc rc direction) num set lineCell >>= maybe (return Nothing) writeCells
      where
-       f rewriteCells = do
+       writeCells rewriteCells = do
          newLines <- Prelude.mapM (writeCell mb direction) rewriteCells
 --         if L.null newLines then return () else printArray mb
          return (Just (problem, newLines))
@@ -77,20 +78,20 @@ logicalStep :: MProblem -> Seq Line -> IO (Maybe MProblem)
 logicalStep problem@(mb,rc,cc) seql =
     case viewl seql of 
       EmptyL -> return (Just problem)
-      e :< es -> logicalLinesStep problem e >>= maybe (return Nothing) (f es)
+      e :< es -> logicalLinesStep problem e >>= maybe (return Nothing) (nextLogicalStep es)
       where
         insertLine ls x@(xb,xi,xe) = case viewl ls of
             EmptyL -> S.singleton (xb,xi,T.singleton xe)
             e@(eb,ei,es) :< ess -> if eb == xb && ei == xi then (eb,ei,insert xe es) <| ess else e <| (insertLine ess x)
-        f :: Seq Line -> (MProblem, [(Bool,Int,Int)]) -> IO (Maybe MProblem)
-        f es (newProblem,changeLines) = let newLines = L.foldl' insertLine es changeLines in logicalStep newProblem newLines
+        nextLogicalStep :: Seq Line -> (MProblem, [(Bool,Int,Int)]) -> IO (Maybe MProblem)
+        nextLogicalStep es (newProblem,changeLines) = let newLines = L.foldl' insertLine es changeLines in logicalStep newProblem newLines
                       
 estimateStep :: MProblem -> IO [(MProblem,Seq Line)]
 estimateStep mproblem@(mb,mrc,mcc) = do
   rassocs <- getAssocs mrc
   cassocs <- getAssocs mcc
-  let cs = concatMap (\(i,cs)-> Prelude.map (\e -> (True,i,e)) cs) rassocs ++ concatMap (\(i,cs)-> Prelude.map (\e-> (False,i,e)) cs) cassocs
-  let (bl,i,constraint@(c,(lb,ub))) = minimumBy (\a b -> compare (f a) (f b)) cs
+  let cs = refineConstraint rassocs True ++ refineConstraint cassocs False
+  let (bl,i,constraint@(c,Range lb ub)) = minimumBy (\a b -> compare (f a) (f b)) cs
   rewriteConstraint mrc mcc bl i constraint
   bassocs <- getAssocs mb
   let targetCell = Prelude.drop(lb-1) $ Prelude.take ub $ createLineFromBoard bassocs bl i
@@ -99,8 +100,9 @@ estimateStep mproblem@(mb,mrc,mcc) = do
   iproblem@(ib,irc,icc) <- freezeProblem mproblem
   Prelude.mapM ( g iproblem bl ) newCells
     where
+      refineConstraint as flg = concatMap (\(i,cs)-> Prelude.map (\e -> (flg,i,e)) cs) as
 --      f (_,_,c) = Prelude.length $ createCandidates c
-      f (_,_,(cs,(lb,ub))) = cvolume cs (ub-lb+1)
+      f (_,_,(cs,Range lb ub)) = cvolume cs (ub-lb+1)
       g iproblem direction xs = do
         mp@(mb,rc,cc) <- thawProblem iproblem
         newLines <- Prelude.mapM (writeCell mb direction) (Prelude.map (\(i,c) -> (i,Just c)) xs)
