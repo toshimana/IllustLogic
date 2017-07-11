@@ -17,11 +17,8 @@ type IConstraints = Array Int Constraints
 
 type Line = (Bool,Int, Set Int) -- (direction::Bool, Number::Int)
 
-type Candidate = Integer
-type Candidates = [Candidate]
-
-type MProblem = (MBoard, MConstraints, MConstraints)
-type IProblem = (IBoard, IConstraints, IConstraints)
+data MProblem = MProblem MBoard MConstraints MConstraints
+data IProblem = IProblem IBoard IConstraints IConstraints
     
 inputdata :: [String] -> ([Constraints],[Constraints])
 inputdata cs = 
@@ -32,14 +29,19 @@ inputdata cs =
       g = Prelude.map read . words
       (rowStr,colStr) = let (a,b) = break (\s -> s == "") cs in (a,tail b)
 
-changeProblem f1 f2 (b,rc,cc) = do
-  nb <- f1 b; nrc <- f2 rc; ncc <- f2 cc; return (nb,nrc,ncc)
-
 freezeProblem :: MProblem -> IO IProblem
-freezeProblem = changeProblem freeze freeze
+freezeProblem (MProblem mb mrc mcc) = do
+  ib <- freeze mb
+  irc <- freeze mrc
+  icc <- freeze mcc
+  return (IProblem ib irc icc)
 
 thawProblem :: IProblem -> IO MProblem
-thawProblem = changeProblem thaw thaw
+thawProblem (IProblem ib irc icc) = do
+  mb <- thaw ib
+  mrc <- thaw irc
+  mcc <- thaw icc
+  return (MProblem mb mrc mcc)
 
 createLineFromBoard :: [(Index,Cell)] -> Bool -> Int -> [(Index,Cell)]
 createLineFromBoard elements direction index =
@@ -63,10 +65,10 @@ writeCell board direction (index,cell) = do
     return $ if direction then (False,snd index, fst index) else (True,fst index, snd index)
 
 logicalLinesStep :: MProblem -> Line -> IO (Maybe (MProblem, [(Bool,Int,Int)]))
-logicalLinesStep problem@(mb,rc,cc) line@(direction,num,set) = do
+logicalLinesStep problem@(MProblem mb mrc mcc) line@(direction,num,set) = do
     elems <- getAssocs mb
     let lineCell = createLineFromBoard elems direction num
-    createNewLine_ (bool cc rc direction) num set lineCell >>= maybe (return Nothing) writeCells
+    createNewLine_ (bool mcc mrc direction) num set lineCell >>= maybe (return Nothing) writeCells
      where
        writeCells rewriteCells = do
          newLines <- Prelude.mapM (writeCell mb direction) rewriteCells
@@ -75,7 +77,7 @@ logicalLinesStep problem@(mb,rc,cc) line@(direction,num,set) = do
     
                                
 logicalStep :: MProblem -> Seq Line -> IO (Maybe MProblem)
-logicalStep problem@(mb,rc,cc) seql =
+logicalStep problem seql =
     case viewl seql of 
       EmptyL -> return (Just problem)
       e :< es -> logicalLinesStep problem e >>= maybe (return Nothing) (nextLogicalStep es)
@@ -87,7 +89,7 @@ logicalStep problem@(mb,rc,cc) seql =
         nextLogicalStep es (newProblem,changeLines) = let newLines = L.foldl' insertLine es changeLines in logicalStep newProblem newLines
                       
 estimateStep :: MProblem -> IO [(MProblem,Seq Line)]
-estimateStep mproblem@(mb,mrc,mcc) = do
+estimateStep mproblem@(MProblem mb mrc mcc) = do
   rassocs <- getAssocs mrc
   cassocs <- getAssocs mcc
   let cs = refineConstraint rassocs True ++ refineConstraint cassocs False
@@ -97,14 +99,14 @@ estimateStep mproblem@(mb,mrc,mcc) = do
   let targetCell = Prelude.drop(lb-1) $ Prelude.take ub $ createLineFromBoard bassocs bl i
   let newLines = Prelude.filter (adaptLine (Prelude.map snd targetCell)) (createCandidates constraint)
   let newCells = Prelude.map (\newLine -> L.foldl' (\cur -> \((i,c),n) -> if isNothing c then (i,n):cur else cur) [] (L.zip targetCell newLine) ) newLines
-  iproblem@(ib,irc,icc) <- freezeProblem mproblem
+  iproblem@(IProblem ib irc icc) <- freezeProblem mproblem
   Prelude.mapM ( g iproblem bl ) newCells
     where
       refineConstraint as flg = concatMap (\(i,cs)-> Prelude.map (\e -> (flg,i,e)) cs) as
 --      f (_,_,c) = Prelude.length $ createCandidates c
       f (_,_,(cs,Range lb ub)) = cvolume cs (ub-lb+1)
       g iproblem direction xs = do
-        mp@(mb,rc,cc) <- thawProblem iproblem
+        mp@(MProblem mb _ _) <- thawProblem iproblem
         newLines <- Prelude.mapM (writeCell mb direction) (Prelude.map (\(i,c) -> (i,Just c)) xs)
         return (mp, L.foldl' (\lines (bl,i,e)-> (bl,i,T.singleton e) <| lines) S.empty newLines)
       rewriteConstraint_ :: MConstraints -> Int -> Constraint -> IO ()
@@ -121,7 +123,7 @@ isSolved mb = getElems mb >>= return . and . ( Prelude.map (\n -> isJust n) )
 solve :: Int -> MProblem -> Seq Line -> IO [(Int,MBoard)]
 solve depth problem seql = logicalStep problem seql >>= maybe (return []) next
     where
-      next logicProblem@(mb,_,_) = do
+      next logicProblem@(MProblem mb _ _) = do
         print depth >> printArray mb
         isSolved mb >>= bool (estimateStep logicProblem >>= Prelude.mapM (\(p,l)->solve (depth+1) p l) >>= return.concat) (return [(depth,mb)])
 
@@ -151,7 +153,7 @@ main = do
         colConstraint <- newListArray (1,clen) cc
         mb <- newArray ((1,1),(rlen, clen)) Nothing
         let allLine = (createLineSeq True clen rlen) >< (createLineSeq False rlen clen)
-        results <- solve 0 (mb, rowConstraint, colConstraint) allLine
+        results <- solve 0 (MProblem mb rowConstraint colConstraint) allLine
         print "[[Result]]"
         Prelude.mapM_ (\(d,b) -> print d >> printArray b) results
 
