@@ -38,6 +38,7 @@ data Line = Line Direction LineIndex CellIndices
 
 data MProblem = MProblem MBoard MConstraints MConstraints
 data IProblem = IProblem IBoard IConstraints IConstraints
+newtype Depth = Depth Int
 
 adaptLine :: BoardLine -> Candidate -> Bool
 adaptLine (BoardLine bline) (Candidate xs) = and $ L.zipWith f bline xs
@@ -209,12 +210,15 @@ estimateStep mproblem@(MProblem (MBoard mb) mrc@(MConstraints rc) mcc@(MConstrai
 isSolved :: MBoard -> IO Bool
 isSolved (MBoard mb) = getElems mb >>= return . and . ( Prelude.map (\(CellElt n) -> isJust n) )
 
-solve :: Int -> MProblem -> Seq Line -> IO [(Int,MBoard)]
-solve depth problem seql = logicalStep problem seql >>= maybe (return []) next
+incr :: Depth -> Depth
+incr (Depth d) = Depth (d+1)
+
+solve :: Depth -> MProblem -> Seq Line -> IO [(Depth,MBoard)]
+solve depth@(Depth d) problem seql = logicalStep problem seql >>= maybe (return []) next
     where
       next logicProblem@(MProblem mb _ _) = do
-        print depth >> printArray mb
-        isSolved mb >>= bool (estimateStep logicProblem >>= Prelude.mapM (\(p,l)->solve (depth+1) p l) >>= return.concat) (return [(depth,mb)])
+        print d >> printArray mb
+        isSolved mb >>= bool (estimateStep logicProblem >>= Prelude.mapM (\(p,l)->solve (incr depth) p l) >>= return.concat) (return [(depth,mb)])
 
 printArray :: MBoard -> IO ()
 printArray (MBoard mb) = do
@@ -243,8 +247,8 @@ solveIllustLogic rowConstraint colConstraint = do
     colConstraint <- newListArray (1,clen) cc
     mb <- newArray (Index 1 1, Index rlen clen) (CellElt Nothing)
     let allLine = (createLineSeq True clen rlen) >< (createLineSeq False rlen clen)
-    results <- solve 0 (MProblem (MBoard mb) (MConstraints rowConstraint) (MConstraints colConstraint)) allLine
+    results <- solve (Depth 0) (MProblem (MBoard mb) (MConstraints rowConstraint) (MConstraints colConstraint)) allLine
     print "[[Result]]"
-    Prelude.mapM_ (\(d,b) -> print d >> printArray b) results
-    return $ Prelude.map (\(d,b) -> toResult b) results
+    Prelude.mapM_ (\(Depth d,b) -> print d >> printArray b) results
+    return $ Prelude.map (\(_,b) -> toResult b) results
 
