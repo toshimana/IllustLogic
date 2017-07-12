@@ -39,6 +39,7 @@ data Line = Line Direction LineIndex CellIndices
 data MProblem = MProblem MBoard MConstraints MConstraints
 data IProblem = IProblem IBoard IConstraints IConstraints
 newtype ChangeLines = ChangeLines (Seq Line)
+data SolvingProblem = SolvingProblem MProblem ChangeLines
 
 newtype Depth = Depth Int
 
@@ -166,8 +167,8 @@ logicalLinesStep problem@(MProblem mb@(MBoard board) mrc mcc) line@(Line directi
         return (Just (problem, newLines))
     
                                
-logicalStep :: MProblem -> ChangeLines -> IO (Maybe MProblem)
-logicalStep problem (ChangeLines seql) =
+logicalStep :: SolvingProblem -> IO (Maybe MProblem)
+logicalStep sp@(SolvingProblem problem (ChangeLines seql)) =
     case viewl seql of 
       EmptyL -> return (Just problem)
       e :< es -> logicalLinesStep problem e >>= maybe (return Nothing) (nextLogicalStep (ChangeLines es))
@@ -178,9 +179,9 @@ logicalStep problem (ChangeLines seql) =
             EmptyL -> S.singleton (Line xb xi (CellIndices (T.singleton xe)))
             e@(Line eb ei@(LineIndex eli) es@(CellIndices ecs)) :< ess -> if eb == xb && eli == xli then (Line eb ei (CellIndices (insert xe ecs))) <| ess else e <| (insertLine_ ess x)
         nextLogicalStep :: ChangeLines -> (MProblem, [(Direction,LineIndex,Int)]) -> IO (Maybe MProblem)
-        nextLogicalStep es (newProblem,changeLines) = let newLines = L.foldl' insertLine es changeLines in logicalStep newProblem newLines
+        nextLogicalStep es (newProblem,changeLines) = let newLines = L.foldl' insertLine es changeLines in logicalStep (SolvingProblem newProblem newLines)
                       
-estimateStep :: MProblem -> IO [(MProblem,ChangeLines)]
+estimateStep :: MProblem -> IO [SolvingProblem]
 estimateStep mproblem@(MProblem (MBoard mb) mrc@(MConstraints rc) mcc@(MConstraints cc)) = do
   rassocs <- getAssocs rc
   cassocs <- getAssocs cc
@@ -202,7 +203,7 @@ estimateStep mproblem@(MProblem (MBoard mb) mrc@(MConstraints rc) mcc@(MConstrai
       g iproblem direction xs = do
         mp@(MProblem mb _ _) <- thawProblem iproblem
         newLines <- Prelude.mapM (writeCell mb direction) (Prelude.map (\(i,c) -> (Cell i (CellElt (Just c)))) xs)
-        return (mp, ChangeLines (L.foldl' (\lines (bl,i,e)-> (Line bl i (CellIndices (T.singleton e))) <| lines) S.empty newLines))
+        return (SolvingProblem mp (ChangeLines (L.foldl' (\lines (bl,i,e)-> (Line bl i (CellIndices (T.singleton e))) <| lines) S.empty newLines)))
       rewriteConstraint_ :: MConstraints -> LineIndex -> RangeConstraint -> IO ()
       rewriteConstraint_ (MConstraints c) (LineIndex i) constraint = do
           Constraints cs <- readArray c i
@@ -216,12 +217,12 @@ isSolved (MBoard mb) = getElems mb >>= return . and . ( Prelude.map (\(CellElt n
 incr :: Depth -> Depth
 incr (Depth d) = Depth (d+1)
 
-solve :: Depth -> MProblem -> ChangeLines -> IO [(Depth,MBoard)]
-solve depth@(Depth d) problem seql = logicalStep problem seql >>= maybe (return []) next
+solve :: Depth -> SolvingProblem -> IO [(Depth,MBoard)]
+solve depth@(Depth d) sp = logicalStep sp >>= maybe (return []) next
     where
       next logicProblem@(MProblem mb _ _) = do
         print d >> printArray mb
-        isSolved mb >>= bool (estimateStep logicProblem >>= Prelude.mapM (\(p,l)->solve (incr depth) p l) >>= return.concat) (return [(depth,mb)])
+        isSolved mb >>= bool (estimateStep logicProblem >>= Prelude.mapM (\newp->solve (incr depth) newp) >>= return.concat) (return [(depth,mb)])
 
 printArray :: MBoard -> IO ()
 printArray (MBoard mb) = do
@@ -255,7 +256,7 @@ solveIllustLogic rowConstraint colConstraint = do
     colConstraint <- newListArray (1,clen) cc
     mb <- newArray (Index 1 1, Index rlen clen) (CellElt Nothing)
     let allLine = append (createChangeLines True clen rlen) (createChangeLines False rlen clen)
-    results <- solve (Depth 0) (MProblem (MBoard mb) (MConstraints rowConstraint) (MConstraints colConstraint)) allLine
+    results <- solve (Depth 0) (SolvingProblem (MProblem (MBoard mb) (MConstraints rowConstraint) (MConstraints colConstraint)) allLine)
     print "[[Result]]"
     Prelude.mapM_ (\(Depth d,b) -> print d >> printArray b) results
     return $ Prelude.map (\(_,b) -> toResult b) results
