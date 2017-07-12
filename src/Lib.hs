@@ -14,8 +14,9 @@ data Index = Index Int Int deriving (Ix, Ord, Eq)
 newtype CellIndices = CellIndices (Set Int)
 
 newtype Cell = Cell (Maybe Bool)
-data Constraint = Constraint [Int] Range deriving (Eq)
-newtype Constraints = Constraints [Constraint]
+newtype Constraint = Constraint [Int] deriving (Eq)
+data RangeConstraint = RangeConstraint Constraint Range deriving (Eq)
+newtype Constraints = Constraints [RangeConstraint]
 
 newtype MBoard = MBoard (IOArray Index Cell)
 newtype IBoard = IBoard (Array Index Cell)
@@ -48,30 +49,30 @@ labeling (Candidate list) = LabelLine (f list 0)
       f [] cur = []
       f (x:xs) cur = if (odd cur) == x then cur : (f xs cur) else (cur+1):(f xs (cur+1))
 
-createCandidates :: Constraint -> [Candidate]
-createCandidates (Constraint cs (Range lb ub)) = createCandidates_ (ub-lb+1) cs (volume cs)
+createCandidates :: RangeConstraint -> [Candidate]
+createCandidates (RangeConstraint cs (Range lb ub)) = createCandidates_ (ub-lb+1) cs (volume cs)
 
-createCandidates__ :: Int -> [Int] -> Int -> [[Bool]]
-createCandidates__ num [] _ = [L.replicate num False]
-createCandidates__ num constraint@(x:xs) vol =
+createCandidates__ :: Int -> Constraint -> Int -> [[Bool]]
+createCandidates__ num (Constraint []) _ = [L.replicate num False]
+createCandidates__ num constraint@(Constraint (x:xs)) vol =
     case compare num vol of
       LT -> []
       EQ -> if L.null xs then [L.replicate x True] else blackList
       GT -> blackList ++ whiteList
      where 
-       blackList = Prelude.map (\n -> (L.replicate x True) ++ (False:n) ) $ createCandidates__ (num-x-1) xs (vol-x-1)
+       blackList = Prelude.map (\n -> (L.replicate x True) ++ (False:n) ) $ createCandidates__ (num-x-1) (Constraint xs) (vol-x-1)
        whiteList = Prelude.map (\n -> False:n) $ createCandidates__ (num-1) constraint vol
 
-createCandidates_ :: Int -> [Int] -> Int -> [Candidate]
+createCandidates_ :: Int -> Constraint -> Int -> [Candidate]
 createCandidates_ num constraint vol = Prelude.map Candidate (createCandidates__ num constraint vol)
 
-volume :: [Int] -> Int
-volume = sum . (intersperse 1)
+volume :: Constraint -> Int
+volume (Constraint cs) = sum (intersperse 1 cs)
 
-cvolume :: [Int] -> Int -> Int
-cvolume xs s =
-    let box = Prelude.length xs + 1 in
-    let ball = s - volume xs in
+cvolume :: Constraint -> Int -> Int
+cvolume constraint@(Constraint cs) s =
+    let box = Prelude.length cs + 1 in
+    let ball = s - volume constraint in
     f box ball
     where 
         f _ 0 = 1
@@ -82,29 +83,29 @@ cvolume xs s =
 match :: LabelLine -> LabelLine -> MatchLine
 match (LabelLine xs) (LabelLine ys) = MatchLine (L.zipWith (\x y -> if x == y then Just x else Nothing) xs ys)
 
-solveConstraint :: [(Index,Cell)] -> Constraint -> Maybe ([(Index,Cell)], Constraints)
-solveConstraint cells constraint@(Constraint xs bound@(Range lb ub)) = if L.null c then Nothing else Just (newCells,Constraints newConstraint)
+solveConstraint :: [(Index,Cell)] -> RangeConstraint -> Maybe ([(Index,Cell)], Constraints)
+solveConstraint cells rc@(RangeConstraint constraint@(Constraint cs) bound@(Range lb ub)) = if L.null c then Nothing else Just (newCells,Constraints newConstraint)
     where
         targetCells = Prelude.drop (lb-1) $ Prelude.take (ub) cells
         targets = Prelude.map snd targetCells
         len = ub - lb + 1
-        vol = volume xs
-        c = Prelude.filter (adaptLine (BoardLine targets)) (createCandidates_ len xs vol)
+        vol = volume constraint
+        c = Prelude.filter (adaptLine (BoardLine targets)) (createCandidates_ len constraint vol)
         candidates = labeling $ head c 
-        revCandidates = labeling $ reverseCandidate $ head $ Prelude.filter (adaptLine (BoardLine (Prelude.reverse targets))) (createCandidates_ len (Prelude.reverse xs) vol)
+        revCandidates = labeling $ reverseCandidate $ head $ Prelude.filter (adaptLine (BoardLine (Prelude.reverse targets))) (createCandidates_ len (Constraint (Prelude.reverse cs)) vol)
         (MatchLine line) = match candidates revCandidates
         newline = Prelude.map (maybe Nothing (\n -> Just (odd n)) ) line
         newCells = L.foldl' (\cur -> \((i,Cell c),n) -> if isJust n && c /= n  then (i,Cell n):cur else cur) [] (L.zip targetCells newline)
         l = Prelude.map (\(n,i) -> (div (fromJust n) 2, i)) $ Prelude.filter (maybe False even . fst) $ L.zip line [lb..ub]
-        newConstraint = Prelude.filter (\(Constraint n (Range lb ub)) -> volume n /= (ub-lb+1)) $ Prelude.filter (\(Constraint n _) -> not (L.null n)) $ createNewConstraint constraint l
-        createNewConstraint :: Constraint -> [(Int,Int)] -> [Constraint]
-        createNewConstraint xs [] = [xs]
-        createNewConstraint (Constraint xs (Range lb ub)) ((c,i):cs) = let (a,b) = L.splitAt c xs in (Constraint a (Range lb (i-1))) : createNewConstraint (Constraint b (Range (i+1) ub)) (Prelude.map (\(n,j) -> (n-c,j)) cs)
+        newConstraint = Prelude.filter (\(RangeConstraint constraint (Range lb ub)) -> volume constraint /= (ub-lb+1)) $ Prelude.filter (\(RangeConstraint (Constraint cs) _) -> not (L.null cs)) $ createNewRangeConstraint rc l
+        createNewRangeConstraint :: RangeConstraint -> [(Int,Int)] -> [RangeConstraint]
+        createNewRangeConstraint xs [] = [xs]
+        createNewRangeConstraint (RangeConstraint (Constraint xs) (Range lb ub)) ((c,i):cs) = let (a,b) = L.splitAt c xs in (RangeConstraint (Constraint a) (Range lb (i-1))) : createNewRangeConstraint (RangeConstraint (Constraint b) (Range (i+1) ub)) (Prelude.map (\(n,j) -> (n-c,j)) cs)
         reverseCandidate (Candidate c) = Candidate (Prelude.reverse c)
 
 createNewLine :: [(Index,Cell)] -> CellIndices -> Constraints -> Maybe ([(Index,Cell)], Constraints)
 createNewLine lineCell (CellIndices set) (Constraints constraints) = 
-    let (targets, outOfTargets) = L.partition (\(Constraint _ (Range lb ub)) -> any (\n -> member n set) [lb..ub]) constraints in 
+    let (targets, outOfTargets) = L.partition (\(RangeConstraint _ (Range lb ub)) -> any (\n -> member n set) [lb..ub]) constraints in 
     let ret = Prelude.map (solveConstraint lineCell) targets in
     if any isNothing ret then Nothing
     else let a = Prelude.map fromJust ret in 
@@ -177,7 +178,7 @@ estimateStep mproblem@(MProblem (MBoard mb) mrc@(MConstraints rc) mcc@(MConstrai
   rassocs <- getAssocs rc
   cassocs <- getAssocs cc
   let cs = refineConstraint rassocs True ++ refineConstraint cassocs False
-  let (bl,i,constraint@(Constraint c (Range lb ub))) = minimumBy (\a b -> compare (f a) (f b)) cs
+  let (bl,i,constraint@(RangeConstraint c (Range lb ub))) = minimumBy (\a b -> compare (f a) (f b)) cs
   let li = LineIndex i
   rewriteConstraint mrc mcc bl li constraint
   bassocs <- getAssocs mb
@@ -189,16 +190,16 @@ estimateStep mproblem@(MProblem (MBoard mb) mrc@(MConstraints rc) mcc@(MConstrai
     where
       refineConstraint as flg = concatMap (\(i,Constraints cs)-> Prelude.map (\e -> (Direction flg,i,e)) cs) as
 --      f (_,_,c) = Prelude.length $ createCandidates c
-      f (_,_,(Constraint cs (Range lb ub))) = cvolume cs (ub-lb+1)
+      f (_,_,(RangeConstraint cs (Range lb ub))) = cvolume cs (ub-lb+1)
       g iproblem direction xs = do
         mp@(MProblem mb _ _) <- thawProblem iproblem
         newLines <- Prelude.mapM (writeCell mb direction) (Prelude.map (\(i,c) -> (i,Cell (Just c))) xs)
         return (mp, L.foldl' (\lines (bl,i,e)-> (Line bl i (CellIndices (T.singleton e))) <| lines) S.empty newLines)
-      rewriteConstraint_ :: MConstraints -> LineIndex -> Constraint -> IO ()
+      rewriteConstraint_ :: MConstraints -> LineIndex -> RangeConstraint -> IO ()
       rewriteConstraint_ (MConstraints c) (LineIndex i) constraint = do
           Constraints cs <- readArray c i
           writeArray c i (Constraints (L.delete constraint cs))
-      rewriteConstraint :: MConstraints -> MConstraints -> Direction -> LineIndex -> Constraint -> IO ()
+      rewriteConstraint :: MConstraints -> MConstraints -> Direction -> LineIndex -> RangeConstraint -> IO ()
       rewriteConstraint rc cc (Direction d) i constraint = rewriteConstraint_ (if d then rc else cc) i constraint
         
 isSolved :: MBoard -> IO Bool
@@ -232,8 +233,8 @@ toResult (MBoard mb) = undefined
 solveIllustLogic :: [[Int]] -> [[Int]] -> IO [IOArray (Int,Int) Bool]
 solveIllustLogic rowConstraint colConstraint = do
     let (rlen,clen) = (Prelude.length rowConstraint, Prelude.length colConstraint)
-    let rc = Prelude.map (\n -> Constraints [Constraint n (Range (1::Int) clen)]) rowConstraint
-    let cc = Prelude.map (\n -> Constraints [Constraint n (Range (1::Int) rlen)]) colConstraint
+    let rc = Prelude.map (\n -> Constraints [RangeConstraint (Constraint n) (Range (1::Int) clen)]) rowConstraint
+    let cc = Prelude.map (\n -> Constraints [RangeConstraint (Constraint n) (Range (1::Int) rlen)]) colConstraint
     rowConstraint <- newListArray (1,rlen) rc
     colConstraint <- newListArray (1,clen) cc
     mb <- newArray (Index 1 1, Index rlen clen) (Cell Nothing)
