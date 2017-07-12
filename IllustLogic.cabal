@@ -15,8 +15,10 @@ cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Lib, Range
+  exposed-modules:     Lib
   build-depends:       base >= 4.7 && < 5
+                     , containers
+                     , array
                      , containers
   default-language:    Haskell2010
 
@@ -26,8 +28,6 @@ executable IllustLogic-exe
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base
                      , IllustLogic
-                     , array
-                     , containers
   default-language:    Haskell2010
 
 test-suite IllustLogic-test
