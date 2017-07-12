@@ -27,6 +27,8 @@ newtype LineIndex = LineIndex Int
 
 newtype Candidate = Candidate [Bool]
 newtype BoardLine = BoardLine [Cell]
+newtype LabelLine = LabelLine [Int]
+newtype MatchLine = MatchLine [Maybe Int]
 
 newtype Direction = Direction Bool deriving (Eq)
 data Line = Line Direction LineIndex CellIndices
@@ -40,8 +42,8 @@ adaptLine (BoardLine bline) (Candidate xs) = and $ L.zipWith f bline xs
           f (Cell (Just a)) b = a==b
           f _ _ = True
 
-labeling :: Candidate -> [Int]
-labeling (Candidate list) = f list 0 
+labeling :: Candidate -> LabelLine
+labeling (Candidate list) = LabelLine (f list 0)
     where
       f [] cur = []
       f (x:xs) cur = if (odd cur) == x then cur : (f xs cur) else (cur+1):(f xs (cur+1))
@@ -77,8 +79,8 @@ cvolume xs s =
         f box 1 = box
         f box ball = L.foldl' (\cur elt-> cur + f (box-1) (ball-elt)) 0 [0..ball]
 
-match :: [Int] -> [Int] -> [Maybe Int]
-match xs ys = L.zipWith (\x y -> if x == y then Just x else Nothing) xs ys
+match :: LabelLine -> LabelLine -> MatchLine
+match (LabelLine xs) (LabelLine ys) = MatchLine (L.zipWith (\x y -> if x == y then Just x else Nothing) xs ys)
 
 solveConstraint :: [(Index,Cell)] -> Constraint -> Maybe ([(Index,Cell)], Constraints)
 solveConstraint cells constraint@(Constraint xs bound@(Range lb ub)) = if L.null c then Nothing else Just (newCells,Constraints newConstraint)
@@ -90,7 +92,7 @@ solveConstraint cells constraint@(Constraint xs bound@(Range lb ub)) = if L.null
         c = Prelude.filter (adaptLine (BoardLine targets)) (createCandidates_ len xs vol)
         candidates = labeling $ head c 
         revCandidates = labeling $ reverseCandidate $ head $ Prelude.filter (adaptLine (BoardLine (Prelude.reverse targets))) (createCandidates_ len (Prelude.reverse xs) vol)
-        line = match candidates revCandidates
+        (MatchLine line) = match candidates revCandidates
         newline = Prelude.map (maybe Nothing (\n -> Just (odd n)) ) line
         newCells = L.foldl' (\cur -> \((i,Cell c),n) -> if isJust n && c /= n  then (i,Cell n):cur else cur) [] (L.zip targetCells newline)
         l = Prelude.map (\(n,i) -> (div (fromJust n) 2, i)) $ Prelude.filter (maybe False even . fst) $ L.zip line [lb..ub]
