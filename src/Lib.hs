@@ -38,6 +38,8 @@ data Line = Line Direction LineIndex CellIndices
 
 data MProblem = MProblem MBoard MConstraints MConstraints
 data IProblem = IProblem IBoard IConstraints IConstraints
+newtype ChangeLines = ChangeLines (Seq Line)
+
 newtype Depth = Depth Int
 
 adaptLine :: BoardLine -> Candidate -> Bool
@@ -164,20 +166,21 @@ logicalLinesStep problem@(MProblem mb@(MBoard board) mrc mcc) line@(Line directi
         return (Just (problem, newLines))
     
                                
-logicalStep :: MProblem -> Seq Line -> IO (Maybe MProblem)
-logicalStep problem seql =
+logicalStep :: MProblem -> ChangeLines -> IO (Maybe MProblem)
+logicalStep problem (ChangeLines seql) =
     case viewl seql of 
       EmptyL -> return (Just problem)
-      e :< es -> logicalLinesStep problem e >>= maybe (return Nothing) (nextLogicalStep es)
+      e :< es -> logicalLinesStep problem e >>= maybe (return Nothing) (nextLogicalStep (ChangeLines es))
       where
-        insertLine :: Seq Line -> (Direction,LineIndex,Int) -> Seq Line
-        insertLine ls x@(xb,xi@(LineIndex xli),xe) = case viewl ls of
+        insertLine :: ChangeLines -> (Direction,LineIndex,Int) -> ChangeLines
+        insertLine (ChangeLines ls) x = ChangeLines (insertLine_ ls x)
+        insertLine_ ls x@(xb,xi@(LineIndex xli),xe) = case viewl ls of
             EmptyL -> S.singleton (Line xb xi (CellIndices (T.singleton xe)))
-            e@(Line eb ei@(LineIndex eli) es@(CellIndices ecs)) :< ess -> if eb == xb && eli == xli then (Line eb ei (CellIndices (insert xe ecs))) <| ess else e <| (insertLine ess x)
-        nextLogicalStep :: Seq Line -> (MProblem, [(Direction,LineIndex,Int)]) -> IO (Maybe MProblem)
+            e@(Line eb ei@(LineIndex eli) es@(CellIndices ecs)) :< ess -> if eb == xb && eli == xli then (Line eb ei (CellIndices (insert xe ecs))) <| ess else e <| (insertLine_ ess x)
+        nextLogicalStep :: ChangeLines -> (MProblem, [(Direction,LineIndex,Int)]) -> IO (Maybe MProblem)
         nextLogicalStep es (newProblem,changeLines) = let newLines = L.foldl' insertLine es changeLines in logicalStep newProblem newLines
                       
-estimateStep :: MProblem -> IO [(MProblem,Seq Line)]
+estimateStep :: MProblem -> IO [(MProblem,ChangeLines)]
 estimateStep mproblem@(MProblem (MBoard mb) mrc@(MConstraints rc) mcc@(MConstraints cc)) = do
   rassocs <- getAssocs rc
   cassocs <- getAssocs cc
@@ -199,7 +202,7 @@ estimateStep mproblem@(MProblem (MBoard mb) mrc@(MConstraints rc) mcc@(MConstrai
       g iproblem direction xs = do
         mp@(MProblem mb _ _) <- thawProblem iproblem
         newLines <- Prelude.mapM (writeCell mb direction) (Prelude.map (\(i,c) -> (Cell i (CellElt (Just c)))) xs)
-        return (mp, L.foldl' (\lines (bl,i,e)-> (Line bl i (CellIndices (T.singleton e))) <| lines) S.empty newLines)
+        return (mp, ChangeLines (L.foldl' (\lines (bl,i,e)-> (Line bl i (CellIndices (T.singleton e))) <| lines) S.empty newLines))
       rewriteConstraint_ :: MConstraints -> LineIndex -> RangeConstraint -> IO ()
       rewriteConstraint_ (MConstraints c) (LineIndex i) constraint = do
           Constraints cs <- readArray c i
@@ -213,7 +216,7 @@ isSolved (MBoard mb) = getElems mb >>= return . and . ( Prelude.map (\(CellElt n
 incr :: Depth -> Depth
 incr (Depth d) = Depth (d+1)
 
-solve :: Depth -> MProblem -> Seq Line -> IO [(Depth,MBoard)]
+solve :: Depth -> MProblem -> ChangeLines -> IO [(Depth,MBoard)]
 solve depth@(Depth d) problem seql = logicalStep problem seql >>= maybe (return []) next
     where
       next logicProblem@(MProblem mb _ _) = do
@@ -231,12 +234,17 @@ printArray (MBoard mb) = do
         g (CellElt (Just True)) = 'X'
         g (CellElt (Just False)) = ' '
 
-createLineSeq :: Bool -> Int -> Int -> Seq Line
-createLineSeq d w 0 = S.empty
-createLineSeq d w num = (createLineSeq d w (num-1)) |> (Line (Direction d) (LineIndex num) (CellIndices (T.fromList [1..w])))
+createChangeLines :: Bool -> Int -> Int -> ChangeLines
+createChangeLines d w n = ChangeLines (createChangeLines_ d w n)
+  where
+    createChangeLines_ d w 0 = S.empty
+    createChangeLines_ d w num = (createChangeLines_ d w (num-1)) |> (Line (Direction d) (LineIndex num) (CellIndices (T.fromList [1..w])))
 
 toResult :: MBoard -> IOArray (Int,Int) Bool
 toResult (MBoard mb) = undefined
+
+append :: ChangeLines -> ChangeLines -> ChangeLines
+append (ChangeLines l) (ChangeLines r) = ChangeLines (l >< r)
 
 solveIllustLogic :: [[Int]] -> [[Int]] -> IO [IOArray (Int,Int) Bool]
 solveIllustLogic rowConstraint colConstraint = do
@@ -246,7 +254,7 @@ solveIllustLogic rowConstraint colConstraint = do
     rowConstraint <- newListArray (1,rlen) rc
     colConstraint <- newListArray (1,clen) cc
     mb <- newArray (Index 1 1, Index rlen clen) (CellElt Nothing)
-    let allLine = (createLineSeq True clen rlen) >< (createLineSeq False rlen clen)
+    let allLine = append (createChangeLines True clen rlen) (createChangeLines False rlen clen)
     results <- solve (Depth 0) (MProblem (MBoard mb) (MConstraints rowConstraint) (MConstraints colConstraint)) allLine
     print "[[Result]]"
     Prelude.mapM_ (\(Depth d,b) -> print d >> printArray b) results
