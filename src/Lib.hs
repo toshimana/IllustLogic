@@ -25,7 +25,7 @@ newtype IConstraints = IConstraints (Array Int Constraints)
 
 newtype LineIndex = LineIndex Int
 
-type Line = (Bool,LineIndex, CellIndices) -- (direction::Bool, Number::Int)
+data Line = Line Bool LineIndex CellIndices  -- (direction::Bool, Number::Int)
 
 data MProblem = MProblem MBoard MConstraints MConstraints
 data IProblem = IProblem IBoard IConstraints IConstraints
@@ -137,7 +137,7 @@ writeCell (MBoard board) direction (index@(Index ridx cidx),cell) = do
     return $ if direction then (False,LineIndex cidx, ridx) else (True,LineIndex ridx, cidx)
 
 logicalLinesStep :: MProblem -> Line -> IO (Maybe (MProblem, [(Bool,LineIndex,Int)]))
-logicalLinesStep problem@(MProblem mb@(MBoard board) mrc mcc) line@(direction,num,set) = do
+logicalLinesStep problem@(MProblem mb@(MBoard board) mrc mcc) line@(Line direction num set) = do
     elems <- getAssocs board
     let lineCell = createLineFromBoard elems direction num
     createNewLine_ (bool mcc mrc direction) num set lineCell >>= maybe (return Nothing) writeCells
@@ -156,8 +156,8 @@ logicalStep problem seql =
       where
         insertLine :: Seq Line -> (Bool,LineIndex,Int) -> Seq Line
         insertLine ls x@(xb,xi@(LineIndex xli),xe) = case viewl ls of
-            EmptyL -> S.singleton (xb,xi,CellIndices (T.singleton xe))
-            e@(eb,ei@(LineIndex eli),es@(CellIndices ecs)) :< ess -> if eb == xb && eli == xli then (eb,ei,CellIndices (insert xe ecs)) <| ess else e <| (insertLine ess x)
+            EmptyL -> S.singleton (Line xb xi (CellIndices (T.singleton xe)))
+            e@(Line eb ei@(LineIndex eli) es@(CellIndices ecs)) :< ess -> if eb == xb && eli == xli then (Line eb ei (CellIndices (insert xe ecs))) <| ess else e <| (insertLine ess x)
         nextLogicalStep :: Seq Line -> (MProblem, [(Bool,LineIndex,Int)]) -> IO (Maybe MProblem)
         nextLogicalStep es (newProblem,changeLines) = let newLines = L.foldl' insertLine es changeLines in logicalStep newProblem newLines
                       
@@ -182,7 +182,7 @@ estimateStep mproblem@(MProblem (MBoard mb) mrc@(MConstraints rc) mcc@(MConstrai
       g iproblem direction xs = do
         mp@(MProblem mb _ _) <- thawProblem iproblem
         newLines <- Prelude.mapM (writeCell mb direction) (Prelude.map (\(i,c) -> (i,Cell (Just c))) xs)
-        return (mp, L.foldl' (\lines (bl,i,e)-> (bl,i,CellIndices (T.singleton e)) <| lines) S.empty newLines)
+        return (mp, L.foldl' (\lines (bl,i,e)-> (Line bl i (CellIndices (T.singleton e))) <| lines) S.empty newLines)
       rewriteConstraint_ :: MConstraints -> LineIndex -> Constraint -> IO ()
       rewriteConstraint_ (MConstraints c) (LineIndex i) constraint = do
           Constraints cs <- readArray c i
@@ -213,7 +213,7 @@ printArray (MBoard mb) = do
 
 createLineSeq :: Bool -> Int -> Int -> Seq Line
 createLineSeq direction w 0 = S.empty
-createLineSeq direction w num = (createLineSeq direction w (num-1)) |> (direction, LineIndex num, CellIndices (T.fromList [1..w]))
+createLineSeq direction w num = (createLineSeq direction w (num-1)) |> (Line direction (LineIndex num) (CellIndices (T.fromList [1..w])))
 
 toResult :: MBoard -> IOArray (Int,Int) Bool
 toResult (MBoard mb) = undefined
