@@ -9,11 +9,11 @@ import Data.Sequence as S
 import Data.List as L (sortBy, groupBy, zipWith, replicate, null, reverse, splitAt, zip, foldl1',foldl',intersperse, minimumBy, delete, partition)
 
 data Range = Range Int Int deriving (Eq)
+data Index = Index Int Int deriving (Ix, Ord, Eq)
 
 newtype CellIndices = CellIndices (Set Int)
 
 newtype Cell = Cell (Maybe Bool)
-type Index = (Int,Int)
 type Constraint = ([Int],Range)
 type Constraints = [Constraint]
 
@@ -114,11 +114,11 @@ thawProblem (IProblem (IBoard ib) (IConstraints irc) (IConstraints icc)) = do
   return (MProblem (MBoard mb) (MConstraints mrc) (MConstraints mcc))
 
 createLineFromBoard :: [(Index,Cell)] -> Bool -> LineIndex -> [(Index,Cell)]
-createLineFromBoard elements direction (LineIndex index) =
+createLineFromBoard elements direction (LineIndex li) =
     Prelude.filter (bool equalColFunc equalRowFunc direction) elements
     where
-      equalRowFunc ((a,_),_) = index == a
-      equalColFunc ((_,a),_) = index == a
+      equalRowFunc (Index a _, _) = li == a
+      equalColFunc (Index _ a, _) = li == a
 
 createNewLine_ :: MConstraints -> LineIndex -> CellIndices -> [(Index,Cell)] -> IO (Maybe [(Index,Cell)])             
 createNewLine_ (MConstraints mc) (LineIndex linenum) set lineCell = do
@@ -130,9 +130,9 @@ createNewLine_ (MConstraints mc) (LineIndex linenum) set lineCell = do
           return (Just newCells)
 
 writeCell :: MBoard -> Bool -> (Index,Cell) -> IO (Bool, LineIndex, Int)
-writeCell (MBoard board) direction (index,cell) = do
+writeCell (MBoard board) direction (index@(Index ridx cidx),cell) = do
     writeArray board index cell
-    return $ if direction then (False,LineIndex (snd index), fst index) else (True,LineIndex (fst index), snd index)
+    return $ if direction then (False,LineIndex cidx, ridx) else (True,LineIndex ridx, cidx)
 
 logicalLinesStep :: MProblem -> Line -> IO (Maybe (MProblem, [(Bool,LineIndex,Int)]))
 logicalLinesStep problem@(MProblem mb@(MBoard board) mrc mcc) line@(direction,num,set) = do
@@ -200,7 +200,7 @@ solve depth problem seql = logicalStep problem seql >>= maybe (return []) next
 
 printArray :: MBoard -> IO ()
 printArray (MBoard mb) = do
-  (_,(_,clen)) <- getBounds mb
+  (_,(Index _ clen)) <- getBounds mb
   getElems mb >>= putStr . unlines . f clen . Prelude.map g >> putChar '\n'
       where
         f collen [] = []
@@ -223,7 +223,7 @@ solveIllustLogic rowConstraint colConstraint = do
     let cc = Prelude.map (\n -> [(n, Range (1::Int) rlen)]) colConstraint
     rowConstraint <- newListArray (1,rlen) rc
     colConstraint <- newListArray (1,clen) cc
-    mb <- newArray ((1,1),(rlen, clen)) (Cell Nothing)
+    mb <- newArray (Index 1 1, Index rlen clen) (Cell Nothing)
     let allLine = (createLineSeq True clen rlen) >< (createLineSeq False rlen clen)
     results <- solve 0 (MProblem (MBoard mb) (MConstraints rowConstraint) (MConstraints colConstraint)) allLine
     print "[[Result]]"
