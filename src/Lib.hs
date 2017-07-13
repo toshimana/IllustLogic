@@ -94,9 +94,9 @@ match (LabelLine xs) (LabelLine ys) = MatchLine (L.zipWith (\x y -> if x == y th
 splitConstraint :: ConstraintIndex -> Constraint -> (Constraint, Constraint)
 splitConstraint (ConstraintIndex i) (Constraint cs) = let (a,b) = L.splitAt i cs in (Constraint a, Constraint b)
 
-createNewRangeConstraint :: RangeConstraint -> [(ConstraintIndex,Int)] -> [RangeConstraint]
+createNewRangeConstraint :: RangeConstraint -> [(ConstraintIndex,CellIndex)] -> [RangeConstraint]
 createNewRangeConstraint xs [] = [xs]
-createNewRangeConstraint (RangeConstraint xs (Range lb ub)) ((ci@(ConstraintIndex c),i):cs) = 
+createNewRangeConstraint (RangeConstraint xs (Range lb ub)) ((ci@(ConstraintIndex c),ii@(CellIndex i)):cs) = 
     let (a,b) = splitConstraint ci xs in 
     (RangeConstraint a (Range lb (i-1))) : createNewRangeConstraint (RangeConstraint b (Range (i+1) ub)) (Prelude.map (\(ConstraintIndex n,j) -> (ConstraintIndex (n-c),j)) cs)
 
@@ -113,7 +113,7 @@ solveConstraint cells rc@(RangeConstraint constraint@(Constraint cs) bound@(Rang
         (MatchLine line) = match candidates revCandidates
         newline = Prelude.map (maybe Nothing (\n -> Just (odd n)) ) line
         newCells = L.foldl' (\cur -> \(Cell i (CellElt c),n) -> if isJust n && c /= n  then (Cell i (CellElt n)):cur else cur) [] (L.zip targetCells newline)
-        l = Prelude.map (\(n,i) -> (ConstraintIndex (div (fromJust n) 2), i)) $ Prelude.filter (maybe False even . fst) $ L.zip line [lb..ub]
+        l = Prelude.map (\(n,i) -> (ConstraintIndex (div (fromJust n) 2), CellIndex i)) $ Prelude.filter (maybe False even . fst) $ L.zip line [lb..ub]
         newConstraint = Prelude.filter (\(RangeConstraint constraint (Range lb ub)) -> volume constraint /= (ub-lb+1)) $ Prelude.filter (\(RangeConstraint (Constraint cs) _) -> not (L.null cs)) $ createNewRangeConstraint rc l
         reverseCandidate (Candidate c) = Candidate (Prelude.reverse c)
 
