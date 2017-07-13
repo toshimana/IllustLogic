@@ -11,7 +11,6 @@ import Data.List as L (sortBy, groupBy, zipWith, replicate, null, reverse, split
 data Range = Range Int Int deriving (Eq)
 data Point = Point Int Int deriving (Ix, Ord, Eq)
 
-newtype CellIndices = CellIndices (Set Int)
 
 newtype CellElt = CellElt (Maybe Bool)
 data Cell = Cell Point CellElt
@@ -24,8 +23,9 @@ newtype MBoard = MBoard (IOArray Point CellElt)
 newtype IBoard = IBoard (Array Point CellElt)
 
 newtype ConstraintIndex = ConstraintIndex Int
-newtype CellIndex = CellIndex Int
+newtype CellIndex = CellIndex Int deriving (Ord, Eq)
 newtype LineIndex = LineIndex Int deriving (Ix, Ord, Eq)
+newtype CellIndices = CellIndices (Set CellIndex)
 
 newtype MConstraints = MConstraints (IOArray LineIndex Constraints)
 newtype IConstraints = IConstraints (Array LineIndex Constraints)
@@ -119,7 +119,7 @@ solveConstraint cells rc@(RangeConstraint constraint@(Constraint cs) bound@(Rang
 
 createNewLine :: [Cell] -> CellIndices -> Constraints -> Maybe ([Cell], Constraints)
 createNewLine lineCell (CellIndices set) (Constraints constraints) = 
-    let (targets, outOfTargets) = L.partition (\(RangeConstraint _ (Range lb ub)) -> any (\n -> member n set) [lb..ub]) constraints in 
+    let (targets, outOfTargets) = L.partition (\(RangeConstraint _ (Range lb ub)) -> any (\n -> member (CellIndex n) set) [lb..ub]) constraints in 
     let ret = Prelude.map (solveConstraint lineCell) targets in
     if any isNothing ret then Nothing
     else let a = Prelude.map fromJust ret in 
@@ -156,12 +156,12 @@ createNewLine_ (MConstraints mc) li set lineCell = do
           writeArray mc li newConstraints
           return (Just newCells)
 
-writeCell :: MBoard -> Direction -> Cell -> IO (Direction, LineIndex, Int)
+writeCell :: MBoard -> Direction -> Cell -> IO (Direction, LineIndex, CellIndex)
 writeCell (MBoard board) (Direction d) (Cell index@(Point ridx cidx) cell) = do
     writeArray board index cell
-    return $ if d then (Direction False,LineIndex cidx, ridx) else (Direction True,LineIndex ridx, cidx)
+    return $ if d then (Direction False,LineIndex cidx, CellIndex ridx) else (Direction True,LineIndex ridx, CellIndex cidx)
 
-logicalLinesStep :: MProblem -> Line -> IO (Maybe (MProblem, [(Direction,LineIndex,Int)]))
+logicalLinesStep :: MProblem -> Line -> IO (Maybe (MProblem, [(Direction,LineIndex,CellIndex)]))
 logicalLinesStep problem@(MProblem mb@(MBoard board) mrc mcc) line@(Line direction num set) = do
     elems <- getAssocs board
     let cells = Prelude.map (\(a,b) -> Cell a b) elems
@@ -181,12 +181,12 @@ logicalStep sp@(SolvingProblem problem (ChangeLines seql)) =
       EmptyL -> return (Just problem)
       e :< es -> logicalLinesStep problem e >>= maybe (return Nothing) (nextLogicalStep (ChangeLines es))
       where
-        insertLine :: ChangeLines -> (Direction,LineIndex,Int) -> ChangeLines
+        insertLine :: ChangeLines -> (Direction,LineIndex,CellIndex) -> ChangeLines
         insertLine (ChangeLines ls) x = ChangeLines (insertLine_ ls x)
         insertLine_ ls x@(xb,xi@(LineIndex xli),xe) = case viewl ls of
             EmptyL -> S.singleton (Line xb xi (CellIndices (T.singleton xe)))
             e@(Line eb ei@(LineIndex eli) es@(CellIndices ecs)) :< ess -> if eb == xb && eli == xli then (Line eb ei (CellIndices (insert xe ecs))) <| ess else e <| (insertLine_ ess x)
-        nextLogicalStep :: ChangeLines -> (MProblem, [(Direction,LineIndex,Int)]) -> IO (Maybe MProblem)
+        nextLogicalStep :: ChangeLines -> (MProblem, [(Direction,LineIndex,CellIndex)]) -> IO (Maybe MProblem)
         nextLogicalStep es (newProblem,changeLines) = let newLines = L.foldl' insertLine es changeLines in logicalStep (SolvingProblem newProblem newLines)
                       
 estimateStep :: MProblem -> IO [SolvingProblem]
@@ -246,7 +246,7 @@ createChangeLines :: Bool -> Int -> Int -> ChangeLines
 createChangeLines d w n = ChangeLines (createChangeLines_ d w n)
   where
     createChangeLines_ d w 0 = S.empty
-    createChangeLines_ d w num = (createChangeLines_ d w (num-1)) |> (Line (Direction d) (LineIndex num) (CellIndices (T.fromList [1..w])))
+    createChangeLines_ d w num = (createChangeLines_ d w (num-1)) |> (Line (Direction d) (LineIndex num) (CellIndices (T.fromList (Prelude.map (\n->CellIndex n) [1..w]))))
 
 toResult :: MBoard -> IOArray (Int,Int) Bool
 toResult (MBoard mb) = undefined
