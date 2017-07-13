@@ -23,11 +23,11 @@ newtype Constraints = Constraints [RangeConstraint]
 newtype MBoard = MBoard (IOArray Point CellElt)
 newtype IBoard = IBoard (Array Point CellElt)
 
-newtype MConstraints = MConstraints (IOArray Int Constraints)
-newtype IConstraints = IConstraints (Array Int Constraints)
-
 newtype CellIndex = CellIndex Int
-newtype LineIndex = LineIndex Int
+newtype LineIndex = LineIndex Int deriving (Ix, Ord, Eq)
+
+newtype MConstraints = MConstraints (IOArray LineIndex Constraints)
+newtype IConstraints = IConstraints (Array LineIndex Constraints)
 
 newtype Candidate = Candidate [Bool]
 newtype BoardLine = BoardLine [CellElt]
@@ -147,12 +147,12 @@ createLineFromBoard elements (Direction d) (LineIndex li) =
       equalColFunc (Cell (Point _ a) _) = li == a
 
 createNewLine_ :: MConstraints -> LineIndex -> CellIndices -> [Cell] -> IO (Maybe [Cell])
-createNewLine_ (MConstraints mc) (LineIndex linenum) set lineCell = do
-    constraints <- readArray mc linenum
-    maybe (return Nothing) (rewriteNewCell mc linenum) (createNewLine lineCell set constraints)
+createNewLine_ (MConstraints mc) li set lineCell = do
+    constraints <- readArray mc li
+    maybe (return Nothing) (rewriteNewCell mc li) (createNewLine lineCell set constraints)
       where
-        rewriteNewCell mc linenum (newCells, newConstraints) = do
-          writeArray mc linenum newConstraints
+        rewriteNewCell mc li (newCells, newConstraints) = do
+          writeArray mc li newConstraints
           return (Just newCells)
 
 writeCell :: MBoard -> Direction -> Cell -> IO (Direction, LineIndex, Int)
@@ -193,8 +193,7 @@ estimateStep mproblem@(MProblem (MBoard mb) mrc@(MConstraints rc) mcc@(MConstrai
   rassocs <- getAssocs rc
   cassocs <- getAssocs cc
   let cs = refineConstraint rassocs True ++ refineConstraint cassocs False
-  let (bl,i,constraint@(RangeConstraint c (Range lb ub))) = minimumBy (\a b -> compare (f a) (f b)) cs
-  let li = LineIndex i
+  let (bl,li,constraint@(RangeConstraint c (Range lb ub))) = minimumBy (\a b -> compare (f a) (f b)) cs
   rewriteConstraint mrc mcc bl li constraint
   bassocs <- getAssocs mb
   let cells = Prelude.map (\(a,b) -> Cell a b) bassocs
@@ -212,9 +211,9 @@ estimateStep mproblem@(MProblem (MBoard mb) mrc@(MConstraints rc) mcc@(MConstrai
         newLines <- Prelude.mapM (writeCell mb direction) (Prelude.map (\(i,c) -> (Cell i (CellElt (Just c)))) xs)
         return (SolvingProblem mp (ChangeLines (L.foldl' (\lines (bl,i,e)-> (Line bl i (CellIndices (T.singleton e))) <| lines) S.empty newLines)))
       rewriteConstraint_ :: MConstraints -> LineIndex -> RangeConstraint -> IO ()
-      rewriteConstraint_ (MConstraints c) (LineIndex i) constraint = do
-          Constraints cs <- readArray c i
-          writeArray c i (Constraints (L.delete constraint cs))
+      rewriteConstraint_ (MConstraints c) li constraint = do
+          Constraints cs <- readArray c li
+          writeArray c li (Constraints (L.delete constraint cs))
       rewriteConstraint :: MConstraints -> MConstraints -> Direction -> LineIndex -> RangeConstraint -> IO ()
       rewriteConstraint rc cc (Direction d) i constraint = rewriteConstraint_ (if d then rc else cc) i constraint
         
@@ -259,8 +258,8 @@ solveIllustLogic rowConstraint colConstraint = do
     let (rlen,clen) = (Prelude.length rowConstraint, Prelude.length colConstraint)
     let rc = Prelude.map (\n -> Constraints [RangeConstraint (Constraint n) (Range (1::Int) clen)]) rowConstraint
     let cc = Prelude.map (\n -> Constraints [RangeConstraint (Constraint n) (Range (1::Int) rlen)]) colConstraint
-    rowConstraint <- newListArray (1,rlen) rc
-    colConstraint <- newListArray (1,clen) cc
+    rowConstraint <- newListArray (LineIndex 1, LineIndex rlen) rc
+    colConstraint <- newListArray (LineIndex 1, LineIndex clen) cc
     mb <- newArray (Point 1 1, Point rlen clen) (CellElt Nothing)
     let allLine = append (createChangeLines True clen rlen) (createChangeLines False rlen clen)
     results <- solve (Depth 0) (SolvingProblem (MProblem (MBoard mb) (MConstraints rowConstraint) (MConstraints colConstraint)) allLine)
