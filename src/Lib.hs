@@ -11,7 +11,6 @@ import Data.List as L (sortBy, groupBy, zipWith, replicate, null, reverse, split
 data Range = Range Int Int deriving (Eq)
 data Point = Point Int Int deriving (Ix, Ord, Eq)
 
-
 newtype CellElt = CellElt (Maybe Bool)
 data Cell = Cell Point CellElt
 
@@ -188,35 +187,58 @@ logicalStep sp@(SolvingProblem problem (ChangeLines seql)) =
             e@(Line eb ei@(LineIndex eli) es@(CellIndices ecs)) :< ess -> if eb == xb && eli == xli then (Line eb ei (CellIndices (insert xe ecs))) <| ess else e <| (insertLine_ ess x)
         nextLogicalStep :: ChangeLines -> (MProblem, [(Direction,LineIndex,CellIndex)]) -> IO (Maybe MProblem)
         nextLogicalStep es (newProblem,changeLines) = let newLines = L.foldl' insertLine es changeLines in logicalStep (SolvingProblem newProblem newLines)
-                      
+
+choiceDirection :: Direction -> a -> a -> a
+choiceDirection (Direction d) a b = bool b a d
+
+getCells :: MBoard -> IO [Cell]
+getCells (MBoard mb) = getAssocs mb >>= return.(Prelude.map (\(a,b)->Cell a b))
+
+rangeList :: Range -> [a] -> [a]
+rangeList (Range lb ub) xs = Prelude.drop (lb-1) $ Prelude.take ub xs
+
+cellElt :: Cell -> CellElt
+cellElt (Cell _ ce) = ce
+
+isConfirmed :: CellElt -> Bool
+isConfirmed (CellElt ce) = isJust ce
+
+isConfirmedCell :: Cell -> Bool
+isConfirmedCell (Cell i ce) = isConfirmed ce
+
+renewCell :: Cell -> Bool -> Cell
+renewCell (Cell i _) b = Cell i (CellElt (Just b))
+
+unconfirmedList :: [Cell] -> Candidate -> [Cell]
+unconfirmedList bl (Candidate candidate) = 
+  L.foldl' (\cur (c,i) -> if isConfirmedCell c then cur else (renewCell c i):cur) [] (L.zip bl candidate)
+
 estimateStep :: MProblem -> IO [SolvingProblem]
-estimateStep mproblem@(MProblem (MBoard mb) mrc@(MConstraints rc) mcc@(MConstraints cc)) = do
+estimateStep mproblem@(MProblem mb mrc@(MConstraints rc) mcc@(MConstraints cc)) = do
   rassocs <- getAssocs rc
   cassocs <- getAssocs cc
   let cs = refineConstraint rassocs True ++ refineConstraint cassocs False
-  let (bl,li,constraint@(RangeConstraint c (Range lb ub))) = minimumBy (\a b -> compare (f a) (f b)) cs
-  rewriteConstraint mrc mcc bl li constraint
-  bassocs <- getAssocs mb
-  let cells = Prelude.map (\(a,b) -> Cell a b) bassocs
-  let targetCell = Prelude.drop(lb-1) $ Prelude.take ub $ createLineFromBoard cells bl li
-  let newLines = Prelude.filter (adaptLine (BoardLine (Prelude.map (\(Cell _ ce) -> ce) targetCell))) (createCandidates constraint)
-  let newCells = Prelude.map (\(Candidate newLine) -> L.foldl' (\cur -> \((Cell i (CellElt c)),n) -> if isNothing c then (i,n):cur else cur) [] (L.zip targetCell newLine) ) newLines
-  iproblem@(IProblem ib irc icc) <- freezeProblem mproblem
-  Prelude.mapM ( g iproblem bl ) newCells
+  let (di,li,constraint@(RangeConstraint c r)) = minimumBy (\a b -> compare (calcCost a) (calcCost b)) cs
+  rewriteConstraint (choiceDirection di mrc mcc) li constraint
+  cells <- getCells mb
+  let targetCell = rangeList r $ createLineFromBoard cells di li
+  let bl = BoardLine (Prelude.map cellElt targetCell)
+  let newLines = Prelude.filter (adaptLine bl) (createCandidates constraint)
+  let newCells = Prelude.map (unconfirmedList targetCell) newLines
+  iproblem <- freezeProblem mproblem
+  Prelude.mapM ( g iproblem di ) newCells
     where
       refineConstraint as flg = concatMap (\(i,Constraints cs)-> Prelude.map (\e -> (Direction flg,i,e)) cs) as
 --      f (_,_,c) = Prelude.length $ createCandidates c
-      f (_,_,(RangeConstraint cs (Range lb ub))) = cvolume cs (ub-lb+1)
+      calcCost (_,_,(RangeConstraint cs (Range lb ub))) = cvolume cs (ub-lb+1)
       g iproblem direction xs = do
         mp@(MProblem mb _ _) <- thawProblem iproblem
-        newLines <- Prelude.mapM (writeCell mb direction) (Prelude.map (\(i,c) -> (Cell i (CellElt (Just c)))) xs)
+        newLines <- Prelude.mapM (writeCell mb direction) xs
         return (SolvingProblem mp (ChangeLines (L.foldl' (\lines (bl,i,e)-> (Line bl i (CellIndices (T.singleton e))) <| lines) S.empty newLines)))
-      rewriteConstraint_ :: MConstraints -> LineIndex -> RangeConstraint -> IO ()
-      rewriteConstraint_ (MConstraints c) li constraint = do
+      rewriteConstraint :: MConstraints -> LineIndex -> RangeConstraint -> IO ()
+      rewriteConstraint (MConstraints c) li constraint = do
           Constraints cs <- readArray c li
           writeArray c li (Constraints (L.delete constraint cs))
-      rewriteConstraint :: MConstraints -> MConstraints -> Direction -> LineIndex -> RangeConstraint -> IO ()
-      rewriteConstraint rc cc (Direction d) i constraint = rewriteConstraint_ (if d then rc else cc) i constraint
         
 isSolved :: MBoard -> IO Bool
 isSolved (MBoard mb) = getElems mb >>= return . and . ( Prelude.map (\(CellElt n) -> isJust n) )
@@ -229,7 +251,9 @@ solve depth@(Depth d) sp = logicalStep sp >>= maybe (return []) next
     where
       next logicProblem@(MProblem mb _ _) = do
         print d >> printArray mb
-        isSolved mb >>= bool (estimateStep logicProblem >>= Prelude.mapM (\newp->solve (incr depth) newp) >>= return.concat) (return [(depth,mb)])
+        isSolved mb >>= bool (estimate logicProblem) (return [(depth,mb)])
+      estimate logicProblem = 
+        estimateStep logicProblem >>= Prelude.mapM (\newp->solve (incr depth) newp) >>= return.concat
 
 printArray :: MBoard -> IO ()
 printArray (MBoard mb) = do
@@ -246,7 +270,11 @@ createChangeLines :: Bool -> Int -> Int -> ChangeLines
 createChangeLines d w n = ChangeLines (createChangeLines_ d w n)
   where
     createChangeLines_ d w 0 = S.empty
-    createChangeLines_ d w num = (createChangeLines_ d w (num-1)) |> (Line (Direction d) (LineIndex num) (CellIndices (T.fromList (Prelude.map (\n->CellIndex n) [1..w]))))
+    createChangeLines_ d w num = (createChangeLines_ d w (num-1)) |> newline
+      where 
+        newline = Line (Direction d) (LineIndex num) newCellIndices
+        newCellIndices = CellIndices (T.fromList allCells)
+        allCells = Prelude.map (\n->CellIndex n) [1..w]
 
 toResult :: MBoard -> IOArray (Int,Int) Bool
 toResult (MBoard mb) = undefined
