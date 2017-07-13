@@ -23,6 +23,7 @@ newtype Constraints = Constraints [RangeConstraint]
 newtype MBoard = MBoard (IOArray Point CellElt)
 newtype IBoard = IBoard (Array Point CellElt)
 
+newtype ConstraintIndex = ConstraintIndex Int
 newtype CellIndex = CellIndex Int
 newtype LineIndex = LineIndex Int deriving (Ix, Ord, Eq)
 
@@ -90,14 +91,14 @@ cvolume constraint@(Constraint cs) s =
 match :: LabelLine -> LabelLine -> MatchLine
 match (LabelLine xs) (LabelLine ys) = MatchLine (L.zipWith (\x y -> if x == y then Just x else Nothing) xs ys)
 
-splitConstraint :: Int -> Constraint -> (Constraint, Constraint)
-splitConstraint i (Constraint cs) = let (a,b) = L.splitAt i cs in (Constraint a, Constraint b)
+splitConstraint :: ConstraintIndex -> Constraint -> (Constraint, Constraint)
+splitConstraint (ConstraintIndex i) (Constraint cs) = let (a,b) = L.splitAt i cs in (Constraint a, Constraint b)
 
-createNewRangeConstraint :: RangeConstraint -> [(Int,Int)] -> [RangeConstraint]
+createNewRangeConstraint :: RangeConstraint -> [(ConstraintIndex,Int)] -> [RangeConstraint]
 createNewRangeConstraint xs [] = [xs]
-createNewRangeConstraint (RangeConstraint xs (Range lb ub)) ((c,i):cs) = 
-    let (a,b) = splitConstraint c xs in 
-    (RangeConstraint a (Range lb (i-1))) : createNewRangeConstraint (RangeConstraint b (Range (i+1) ub)) (Prelude.map (\(n,j) -> (n-c,j)) cs)
+createNewRangeConstraint (RangeConstraint xs (Range lb ub)) ((ci@(ConstraintIndex c),i):cs) = 
+    let (a,b) = splitConstraint ci xs in 
+    (RangeConstraint a (Range lb (i-1))) : createNewRangeConstraint (RangeConstraint b (Range (i+1) ub)) (Prelude.map (\(ConstraintIndex n,j) -> (ConstraintIndex (n-c),j)) cs)
 
 solveConstraint :: [Cell] -> RangeConstraint -> Maybe ([Cell], Constraints)
 solveConstraint cells rc@(RangeConstraint constraint@(Constraint cs) bound@(Range lb ub)) = if L.null c then Nothing else Just (newCells,Constraints newConstraint)
@@ -112,7 +113,7 @@ solveConstraint cells rc@(RangeConstraint constraint@(Constraint cs) bound@(Rang
         (MatchLine line) = match candidates revCandidates
         newline = Prelude.map (maybe Nothing (\n -> Just (odd n)) ) line
         newCells = L.foldl' (\cur -> \(Cell i (CellElt c),n) -> if isJust n && c /= n  then (Cell i (CellElt n)):cur else cur) [] (L.zip targetCells newline)
-        l = Prelude.map (\(n,i) -> (div (fromJust n) 2, i)) $ Prelude.filter (maybe False even . fst) $ L.zip line [lb..ub]
+        l = Prelude.map (\(n,i) -> (ConstraintIndex (div (fromJust n) 2), i)) $ Prelude.filter (maybe False even . fst) $ L.zip line [lb..ub]
         newConstraint = Prelude.filter (\(RangeConstraint constraint (Range lb ub)) -> volume constraint /= (ub-lb+1)) $ Prelude.filter (\(RangeConstraint (Constraint cs) _) -> not (L.null cs)) $ createNewRangeConstraint rc l
         reverseCandidate (Candidate c) = Candidate (Prelude.reverse c)
 
