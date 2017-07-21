@@ -36,6 +36,7 @@ newtype MatchLine = MatchLine [Maybe Int]
 
 newtype Direction = Direction Bool deriving (Eq)
 data Line = Line Direction LineIndex CellIndices
+data LinePosition = LinePosition Direction LineIndex CellIndex
 
 data MProblem = MProblem MBoard MConstraints MConstraints
 data IProblem = IProblem IBoard IConstraints IConstraints
@@ -156,13 +157,13 @@ createNewLine_ (MConstraints mc) li set lineCell = do
           writeArray mc li newConstraints
           return (Just newCells)
 
-writeCell :: MBoard -> Direction -> Cell -> IO (Direction, LineIndex, CellIndex)
+writeCell :: MBoard -> Direction -> Cell -> IO LinePosition
 writeCell (MBoard board) (Direction d) (Cell index@(Point ridx cidx) cell) = do
     writeArray board index cell
-    return $ if d then (Direction False,LineIndex cidx, CellIndex ridx) else (Direction True,LineIndex ridx, CellIndex cidx)
+    return $ if d then LinePosition (Direction False) (LineIndex cidx) (CellIndex ridx) else LinePosition (Direction True) (LineIndex ridx) (CellIndex cidx)
 
-logicalLinesStep :: MProblem -> Line -> IO (Maybe (MProblem, [(Direction,LineIndex,CellIndex)]))
-logicalLinesStep problem@(MProblem mb@(MBoard board) mrc mcc) line@(Line direction num set) = do
+logicalLinesStep :: MProblem -> Line -> IO (Maybe (MProblem, [LinePosition]))
+logicalLinesStep problem@(MProblem mb@(MBoard board) mrc mcc) (Line direction num set) = do
     elems <- getAssocs board
     let cells = Prelude.map (\(a,b) -> Cell a b) elems
     let lineCell = createLineFromBoard cells direction num
@@ -174,19 +175,28 @@ logicalLinesStep problem@(MProblem mb@(MBoard board) mrc mcc) line@(Line directi
 --         if L.null newLines then return () else printArray mb
         return (Just (problem, newLines))
     
-                               
+
+insertCellIndices :: CellIndices -> CellIndex -> CellIndices
+insertCellIndices (CellIndices cs) c = CellIndices (insert c cs)
+
+mergeLine :: Line -> CellIndex -> Line
+mergeLine (Line lb li ls) ci = Line lb li (insertCellIndices ls ci)
+
+equalLinePosition :: Line -> LinePosition -> Bool
+equalLinePosition (Line lb li _) (LinePosition rb ri _) = (lb == rb) && (li == ri)
+
 logicalStep :: SolvingProblem -> IO (Maybe MProblem)
 logicalStep (SolvingProblem problem (ChangeLines seql)) =
     case viewl seql of 
       EmptyL -> return (Just problem)
       e :< es -> logicalLinesStep problem e >>= maybe (return Nothing) (nextLogicalStep (ChangeLines es))
       where
-        insertLine :: ChangeLines -> (Direction,LineIndex,CellIndex) -> ChangeLines
+        insertLine :: ChangeLines -> LinePosition -> ChangeLines
         insertLine (ChangeLines ls) x = ChangeLines (insertLine_ ls x)
-        insertLine_ ls x@(xb,xi@(LineIndex xli),xe) = case viewl ls of
+        insertLine_ ls x@(LinePosition xb xi xe) = case viewl ls of
             EmptyL -> S.singleton (Line xb xi (CellIndices (T.singleton xe)))
-            e@(Line eb ei@(LineIndex eli) es@(CellIndices ecs)) :< ess -> if eb == xb && eli == xli then (Line eb ei (CellIndices (insert xe ecs))) <| ess else e <| (insertLine_ ess x)
-        nextLogicalStep :: ChangeLines -> (MProblem, [(Direction,LineIndex,CellIndex)]) -> IO (Maybe MProblem)
+            e :< ess -> if equalLinePosition e x then (mergeLine e xe) <| ess else e <| (insertLine_ ess x)
+        nextLogicalStep :: ChangeLines -> (MProblem, [LinePosition]) -> IO (Maybe MProblem)
         nextLogicalStep es (newProblem,changeLines) = let newLines = L.foldl' insertLine es changeLines in logicalStep (SolvingProblem newProblem newLines)
 
 choiceDirection :: Direction -> a -> a -> a
@@ -243,11 +253,14 @@ rewriteConstraint (MConstraints c) li constraint = do
   Constraints cs <- readArray c li
   writeArray c li (Constraints (L.delete constraint cs))
 
+createLineFromLinePosition :: LinePosition -> Line
+createLineFromLinePosition (LinePosition bl i e) = Line bl i (CellIndices (T.singleton e))
+
 cloneAndEstimateProblem :: IProblem -> Direction -> [Cell] -> IO SolvingProblem
 cloneAndEstimateProblem iproblem direction xs = do
   mp@(MProblem mb _ _) <- thawProblem iproblem
   newLines <- Prelude.mapM (writeCell mb direction) xs
-  return (SolvingProblem mp (ChangeLines (L.foldl' (\lines (bl,i,e)-> (Line bl i (CellIndices (T.singleton e))) <| lines) S.empty newLines)))
+  return (SolvingProblem mp (ChangeLines (L.foldl' (\lines lp -> (createLineFromLinePosition lp) <| lines) S.empty newLines)))
 
 estimateStep :: MProblem -> IO [SolvingProblem]
 estimateStep mproblem@(MProblem mb mrc mcc) = do
@@ -262,11 +275,14 @@ isSolved (MBoard mb) = getElems mb >>= return . and . ( Prelude.map (\(CellElt n
 incr :: Depth -> Depth
 incr (Depth d) = Depth (d+1)
 
+printDepth :: Depth -> IO ()
+printDepth (Depth d) = print d
+
 solve :: Depth -> SolvingProblem -> IO [(Depth,MBoard)]
-solve depth@(Depth d) sp = logicalStep sp >>= maybe (return []) next
+solve depth sp = logicalStep sp >>= maybe (return []) next
     where
       next logicProblem@(MProblem mb _ _) = do
-        print d >> printArray mb
+        printDepth depth >> printArray mb
         isSolved mb >>= bool (estimate logicProblem) (return [(depth,mb)])
       estimate logicProblem = 
         estimateStep logicProblem >>= Prelude.mapM (\newp->solve (incr depth) newp) >>= return.concat
