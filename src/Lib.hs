@@ -104,7 +104,7 @@ createNewRangeConstraint (RangeConstraint xs (Range lb ub)) ((ci@(ConstraintInde
 solveConstraint :: [Cell] -> RangeConstraint -> Maybe ([Cell], Constraints)
 solveConstraint cells rc@(RangeConstraint constraint@(Constraint cs) bound@(Range lb ub)) = if L.null c then Nothing else Just (newCells,Constraints newConstraint)
     where
-        targetCells = Prelude.drop (lb-1) $ Prelude.take (ub) cells
+        targetCells = rangeList bound cells
         targets = Prelude.map (\(Cell _ ce) -> ce) targetCells
         len = ub - lb + 1
         vol = volume constraint
