@@ -70,7 +70,7 @@ match (x:xs) (y:ys) = let z = if x == y then Just x else Nothing in z : (match x
 solveConstraint :: [(Index,Cell)] -> Constraint -> Maybe ([(Index,Cell)], Constraints)
 solveConstraint cells constraint@(xs,(lb,ub)) = if L.null c then Nothing else Just (newCells,newConstraint) 
     where
-        targetCells = drop (lb-1) $ take (ub) cells
+        targetCells = Prelude.drop (lb-1) $ Prelude.take (ub) cells
         targets = Prelude.map snd targetCells
         len = ub - lb + 1
         vol = volume xs
@@ -83,7 +83,7 @@ solveConstraint cells constraint@(xs,(lb,ub)) = if L.null c then Nothing else Ju
         l = Prelude.map (\(n,i) -> (div (fromJust n) 2,i)) $ Prelude.filter (maybe False even . fst) $ zip line [lb..ub]
         newConstraint = Prelude.filter (\(n,(lb,ub))-> volume n /= (ub-lb+1)) $ Prelude.filter (not.(L.null).fst) $ createNewConstraint constraint l
         createNewConstraint xs [] = [xs]
-        createNewConstraint (xs,(lb,ub)) ((c,i):cs) = let (a,b) = splitAt c xs in (a,(lb,i-1)) : createNewConstraint (b,(i+1,ub)) (Prelude.map (\(n,j) -> (n-c,j)) cs)
+        createNewConstraint (xs,(lb,ub)) ((c,i):cs) = let (a,b) = Prelude.splitAt c xs in (a,(lb,i-1)) : createNewConstraint (b,(i+1,ub)) (Prelude.map (\(n,j) -> (n-c,j)) cs)
 
 createNewLine :: [(Index,Cell)] -> Set Int -> Constraints -> Maybe ([(Index,Cell)], Constraints)
 createNewLine lineCell set constraints = 
