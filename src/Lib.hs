@@ -1,4 +1,4 @@
-module Lib ( solveIllustLogic ) where
+module Lib where
 
 import Data.Array.IO 
 import Data.Array
@@ -8,28 +8,37 @@ import Data.Bool (bool)
 import Data.Sequence as S
 import Data.List as L (sortBy, groupBy, zipWith, replicate, null, reverse, splitAt, zip, foldl1',foldl',intersperse, minimumBy, delete, partition)
 
-data Range = Range Int Int deriving (Eq)
-data Point = Point Int Int deriving (Ix, Ord, Eq)
+data Range = Range Int Int deriving (Eq, Show)
+data Point = Point Int Int deriving (Ix, Ord, Eq, Show)
 
-newtype CellElt = CellElt (Maybe Bool)
-data Cell = Cell Point CellElt
+newtype CellElt = CellElt (Maybe Bool) deriving (Eq, Show)
+data Cell = Cell Point CellElt deriving (Eq, Show)
 
-newtype Constraint = Constraint [Int] deriving (Eq)
-data RangeConstraint = RangeConstraint Constraint Range deriving (Eq)
-newtype Constraints = Constraints [RangeConstraint]
+newtype Constraint = Constraint [Int] deriving (Eq, Show)
+data RangeConstraint = RangeConstraint Constraint Range deriving (Eq, Show)
+newtype Constraints = Constraints [RangeConstraint] deriving (Eq, Show)
 
 newtype MBoard = MBoard (IOArray Point CellElt)
 newtype IBoard = IBoard (Array Point CellElt)
 
 newtype ConstraintIndex = ConstraintIndex Int
 newtype CellIndex = CellIndex Int deriving (Ord, Eq)
+instance Num CellIndex where
+  (+) (CellIndex x) (CellIndex y) = CellIndex (x + y)
+  (-) (CellIndex x) (CellIndex y) = CellIndex (x - y)
+  (*) (CellIndex x) (CellIndex y) = CellIndex (x * y)
+  negate (CellIndex x) = CellIndex (negate x)
+  abs (CellIndex x) = CellIndex (abs x)
+  signum (CellIndex x) = CellIndex (signum x)
+  fromInteger a = CellIndex (fromInteger a)
+
 newtype LineIndex = LineIndex Int deriving (Ix, Ord, Eq)
 newtype CellIndices = CellIndices (Set CellIndex)
 
 newtype MConstraints = MConstraints (IOArray LineIndex Constraints)
 newtype IConstraints = IConstraints (Array LineIndex Constraints)
 
-newtype Candidate = Candidate [Bool]
+newtype Candidate = Candidate [Bool] deriving (Show,Eq)
 newtype BoardLine = BoardLine [CellElt]
 newtype LabelLine = LabelLine [Int]
 newtype MatchLine = MatchLine [Maybe Int]
@@ -75,7 +84,7 @@ createCandidates_ num constraint vol = Prelude.map Candidate (createCandidates__
             GT -> blackList ++ whiteList
 
 volume :: Constraint -> Int
-volume (Constraint cs) = sum (intersperse 1 cs)
+volume (Constraint cs) = sum (L.intersperse 1 cs)
 
 cvolume :: Constraint -> Range -> Int
 cvolume constraint@(Constraint cs) (Range lb ub) =
