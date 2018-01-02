@@ -1,3 +1,5 @@
+module LibSpec where
+
 import Test.Hspec
 import Lib
 import Data.Set
