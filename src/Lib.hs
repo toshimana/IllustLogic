@@ -66,18 +66,17 @@ labeling (Candidate list) = LabelLine (f list 0)
       f [] cur = []
       f (x:xs) cur = if (odd cur) == x then cur : (f xs cur) else (cur+1):(f xs (cur+1))
 
-createCandidates :: RangeConstraint -> [Candidate]
-createCandidates (RangeConstraint cs (Range lb ub)) = createCandidates_ (ub-lb+1) cs (volume cs)
+createCandidatesFromRangeConstraint :: RangeConstraint -> [Candidate]
+createCandidatesFromRangeConstraint (RangeConstraint cs (Range lb ub)) = createCandidates (ub-lb+1) cs (volume cs)
 
-
-createCandidates_ :: Int -> Constraint -> Int -> [Candidate]
-createCandidates_ num constraint vol = Prelude.map Candidate (createCandidates__ num constraint vol)
+createCandidates :: Int -> Constraint -> Int -> [Candidate]
+createCandidates num constraint vol = Prelude.map Candidate (createCandidates_ num constraint vol)
       where
-        createCandidates__ :: Int -> Constraint -> Int -> [[Bool]]
-        createCandidates__ num (Constraint []) _ = [L.replicate num False]
-        createCandidates__ num constraint@(Constraint (x:xs)) vol =
-          let blackList = Prelude.map (\n -> (L.replicate x True) ++ (False:n) ) $ createCandidates__ (num-x-1) (Constraint xs) (vol-x-1) in
-          let whiteList = Prelude.map (\n -> False:n) $ createCandidates__ (num-1) constraint vol in
+        createCandidates_ :: Int -> Constraint -> Int -> [[Bool]]
+        createCandidates_ num (Constraint []) _ = [L.replicate num False]
+        createCandidates_ num constraint@(Constraint (x:xs)) vol =
+          let blackList = Prelude.map (\n -> (L.replicate x True) ++ (False:n) ) $ createCandidates_ (num-x-1) (Constraint xs) (vol-x-1) in
+          let whiteList = Prelude.map (\n -> False:n) $ createCandidates_ (num-1) constraint vol in
           case compare num vol of
             LT -> []
             EQ -> if L.null xs then [L.replicate x True] else blackList
@@ -98,34 +97,79 @@ cvolume constraint@(Constraint cs) (Range lb ub) =
         f box 1 = box
         f box ball = L.foldl' (\cur elt-> cur + f (box-1) (ball-elt)) 0 [0..ball]
 
-match :: LabelLine -> LabelLine -> MatchLine
-match (LabelLine xs) (LabelLine ys) = MatchLine (L.zipWith (\x y -> if x == y then Just x else Nothing) xs ys)
+getLength :: Range -> Int
+getLength (Range lb ub) = ub - lb + 1
+
+match :: Candidate -> Candidate -> MatchLine
+match xs ys = 
+  let LabelLine lxs = labeling xs in
+  let LabelLine lys = labeling ys in
+  MatchLine (L.zipWith (\x y -> if x == y then Just x else Nothing) lxs lys)
 
 splitConstraint :: ConstraintIndex -> Constraint -> (Constraint, Constraint)
 splitConstraint (ConstraintIndex i) (Constraint cs) = let (a,b) = L.splitAt i cs in (Constraint a, Constraint b)
 
-createNewRangeConstraint :: RangeConstraint -> [(ConstraintIndex,CellIndex)] -> [RangeConstraint]
-createNewRangeConstraint xs [] = [xs]
-createNewRangeConstraint (RangeConstraint xs (Range lb ub)) ((ci@(ConstraintIndex c),ii@(CellIndex i)):cs) = 
+divideRangeConstraint :: RangeConstraint -> [(ConstraintIndex,CellIndex)] -> [RangeConstraint]
+divideRangeConstraint xs [] = [xs]
+divideRangeConstraint (RangeConstraint xs (Range lb ub)) ((ci@(ConstraintIndex c),ii@(CellIndex i)):cs) = 
     let (a,b) = splitConstraint ci xs in 
-    (RangeConstraint a (Range lb (i-1))) : createNewRangeConstraint (RangeConstraint b (Range (i+1) ub)) (Prelude.map (\(ConstraintIndex n,j) -> (ConstraintIndex (n-c),j)) cs)
+    (RangeConstraint a (Range lb (i-1))) : divideRangeConstraint (RangeConstraint b (Range (i+1) ub)) (Prelude.map (\(ConstraintIndex n,j) -> (ConstraintIndex (n-c),j)) cs)
 
+createFrontCandidate :: RangeConstraint -> BoardLine -> Maybe Candidate
+createFrontCandidate (RangeConstraint constraint bound) lineStates =
+  listToMaybe validCandidates
+  where
+    vol = volume constraint
+    allCandidates = createCandidates (getLength bound) constraint vol
+    validCandidates = Prelude.filter (adaptLine lineStates) allCandidates
+
+reverseCandidate :: Candidate -> Candidate
+reverseCandidate (Candidate c) = Candidate (L.reverse c)
+
+reverseConstraint :: Constraint -> Constraint
+reverseConstraint (Constraint cs) = Constraint (L.reverse cs)
+
+createRearCandidate :: RangeConstraint -> BoardLine -> Maybe Candidate
+createRearCandidate (RangeConstraint constraint bound) lineStates =
+  listToMaybe validCandidates
+  where
+    vol = volume constraint
+    allCandidates = createCandidates (getLength bound) (reverseConstraint constraint) vol
+    validCandidates = Prelude.filter (adaptLine lineStates) (Prelude.map reverseCandidate allCandidates)
+
+findChangingCells :: [Cell] -> MatchLine -> [Cell]
+findChangingCells targetCells (MatchLine matchLine) =
+    let newBoardLine = Prelude.map (maybe Nothing (\n -> Just (odd n)) ) matchLine in
+    L.foldl' f [] (L.zip targetCells newBoardLine)
+    where
+      isNew (CellElt old) new = isJust new && old /= new
+      f cur (Cell i e, n) = if isNew e n  then (Cell i (CellElt n)):cur else cur
+
+getRangeList :: Range -> [Int]
+getRangeList (Range lb ub) = [lb..ub]
+                            
+createNewConstraints :: RangeConstraint -> MatchLine -> [RangeConstraint]
+createNewConstraints rc@(RangeConstraint constraint bound) (MatchLine matchLine) =
+    let whiteCellSeeds = Prelude.filter (maybe False even . fst) $ L.zip matchLine (getRangeList bound) in
+    let whiteCellPoints = Prelude.map (\(n,i) -> (convertConstraintIndexFromWhiteCellLabel n, CellIndex i)) whiteCellSeeds in
+    let dividedRangeConstraints = divideRangeConstraint rc whiteCellPoints in
+    Prelude.filter (\x -> (not (hasConstraint x)) && (not (isCompleted x))) dividedRangeConstraints
+    where
+      convertConstraintIndexFromWhiteCellLabel (Just n) = ConstraintIndex (div n 2)
+      isCompleted (RangeConstraint constraint range) = (volume constraint) == (getLength range)
+      hasConstraint (RangeConstraint (Constraint c) _) = L.null c
+                            
 solveConstraint :: [Cell] -> RangeConstraint -> Maybe ([Cell], Constraints)
-solveConstraint cells rc@(RangeConstraint constraint@(Constraint cs) bound@(Range lb ub)) = if L.null c then Nothing else Just (newCells,Constraints newConstraint)
+solveConstraint cells rc@(RangeConstraint constraint@(Constraint cs) bound@(Range lb ub)) =
+   if isNothing frontValidCandidate then Nothing else Just (newCells, Constraints newRangeConstraint)
     where
         targetCells = rangeList bound cells
-        targets = Prelude.map (\(Cell _ ce) -> ce) targetCells
-        len = ub - lb + 1
-        vol = volume constraint
-        c = Prelude.filter (adaptLine (BoardLine targets)) (createCandidates_ len constraint vol)
-        candidates = labeling $ head c 
-        revCandidates = labeling $ reverseCandidate $ head $ Prelude.filter (adaptLine (BoardLine (Prelude.reverse targets))) (createCandidates_ len (Constraint (Prelude.reverse cs)) vol)
-        (MatchLine line) = match candidates revCandidates
-        newline = Prelude.map (maybe Nothing (\n -> Just (odd n)) ) line
-        newCells = L.foldl' (\cur -> \(Cell i (CellElt c),n) -> if isJust n && c /= n  then (Cell i (CellElt n)):cur else cur) [] (L.zip targetCells newline)
-        l = Prelude.map (\(n,i) -> (ConstraintIndex (div (fromJust n) 2), CellIndex i)) $ Prelude.filter (maybe False even . fst) $ L.zip line [lb..ub]
-        newConstraint = Prelude.filter (\(RangeConstraint constraint (Range lb ub)) -> volume constraint /= (ub-lb+1)) $ Prelude.filter (\(RangeConstraint (Constraint cs) _) -> not (L.null cs)) $ createNewRangeConstraint rc l
-        reverseCandidate (Candidate c) = Candidate (Prelude.reverse c)
+        lineStates = Prelude.map (\(Cell _ ce) -> ce) targetCells
+        frontValidCandidate = createFrontCandidate rc (BoardLine lineStates) 
+        rearValidCandidate = createRearCandidate rc (BoardLine lineStates)
+        matchLine = match (fromJust frontValidCandidate) (fromJust rearValidCandidate)
+        newCells = findChangingCells targetCells matchLine
+        newRangeConstraint = createNewConstraints rc matchLine
 
 createNewLine :: [Cell] -> CellIndices -> Constraints -> Maybe ([Cell], Constraints)
 createNewLine lineCell (CellIndices set) (Constraints constraints) = 
@@ -254,7 +298,7 @@ createEstimateCells :: IBoard -> Direction -> LineIndex -> RangeConstraint -> [[
 createEstimateCells ib di li constraint =
   let targetCell = createRegionCell ib di li constraint in
   let bl = BoardLine (Prelude.map cellElt targetCell) in
-  let newLines = Prelude.filter (adaptLine bl) (createCandidates constraint) in
+  let newLines = Prelude.filter (adaptLine bl) (createCandidatesFromRangeConstraint constraint) in
   Prelude.map (unconfirmedList targetCell) newLines
 
 rewriteConstraint :: MConstraints -> LineIndex -> RangeConstraint -> IO ()

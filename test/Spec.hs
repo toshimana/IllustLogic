@@ -9,9 +9,9 @@ spec :: Spec
 spec = do
   describe "createCandidates" $ do
     it "simple" $ do
-      (createCandidates (rangeConstraint [3] (1,3))) `shouldBe` [Candidate [True,True,True]]
+      (createCandidatesFromRangeConstraint (rangeConstraint [3] (1,3))) `shouldBe` [Candidate [True,True,True]]
     it "multi" $ do
-      (createCandidates (rangeConstraint [3] (1,5))) `shouldBe` [Candidate [True,True,True,False,False],Candidate [False,True,True,True,False],Candidate [False,False,True,True,True]]
+      (createCandidatesFromRangeConstraint (rangeConstraint [3] (1,5))) `shouldBe` [Candidate [True,True,True,False,False],Candidate [False,True,True,True,False],Candidate [False,False,True,True,True]]
 
   describe "solveConstraint" $ do
     it "test1" $ do
