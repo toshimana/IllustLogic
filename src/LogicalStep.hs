@@ -8,17 +8,13 @@ import Data.Bool
 import Data.Maybe
     
 import ILData
-
-newtype BoardLine = BoardLine [CellElt]
-newtype Candidate = Candidate [Bool] deriving (Show,Eq)
+import ILFunc
+    
 newtype MatchLine = MatchLine [Maybe Int]
 newtype LabelLine = LabelLine [Int]
 
 newtype ConstraintIndex = ConstraintIndex Int
     
-rangeList :: Range -> [a] -> [a]
-rangeList (Range lb ub) xs = Prelude.drop (lb-1) $ Prelude.take ub xs
-
 getLength :: Range -> Int
 getLength (Range lb ub) = ub - lb + 1
 
@@ -30,31 +26,6 @@ reverseConstraint (Constraint cs) = Constraint (L.reverse cs)
 
 reverseCandidate :: Candidate -> Candidate
 reverseCandidate (Candidate c) = Candidate (L.reverse c)
-
-volume :: Constraint -> Int
-volume (Constraint cs) = sum (L.intersperse 1 cs)
-
-adaptLine :: BoardLine -> Candidate -> Bool
-adaptLine (BoardLine bline) (Candidate xs) = and $ L.zipWith f bline xs
-        where
-          f (CellElt (Just a)) b = a==b
-          f _ _ = True
-
-createCandidates :: Int -> Constraint -> Int -> [Candidate]
-createCandidates num constraint vol = Prelude.map Candidate (createCandidates_ num constraint vol)
-      where
-        createCandidates_ :: Int -> Constraint -> Int -> [[Bool]]
-        createCandidates_ num (Constraint []) _ = [L.replicate num False]
-        createCandidates_ num constraint@(Constraint (x:xs)) vol =
-          let blackList = Prelude.map (\n -> (L.replicate x True) ++ (False:n) ) $ createCandidates_ (num-x-1) (Constraint xs) (vol-x-1) in
-          let whiteList = Prelude.map (\n -> False:n) $ createCandidates_ (num-1) constraint vol in
-          case compare num vol of
-            LT -> []
-            EQ -> if L.null xs then [L.replicate x True] else blackList
-            GT -> blackList ++ whiteList
-
-createCandidatesFromRangeConstraint :: RangeConstraint -> [Candidate]
-createCandidatesFromRangeConstraint (RangeConstraint cs (Range lb ub)) = createCandidates (ub-lb+1) cs (volume cs)
 
 createFrontCandidate :: RangeConstraint -> BoardLine -> Maybe Candidate
 createFrontCandidate (RangeConstraint constraint bound) lineStates =
@@ -134,13 +105,6 @@ createNewLine lineCell (CellIndices set) (Constraints constraints) =
          let cs = (concat $ Prelude.map (\(_,Constraints c) -> c) a) ++ outOfTargets in
          Just (concat $ Prelude.map fst a, Constraints cs)
 
-createLineFromBoard :: [Cell] -> Direction -> LineIndex -> [Cell]
-createLineFromBoard elements (Direction d) (LineIndex li) =
-    Prelude.filter (bool equalColFunc equalRowFunc d) elements
-    where
-      equalRowFunc (Cell (Point a _) _) = li == a
-      equalColFunc (Cell (Point _ a) _) = li == a
-
 logicalLinesStep :: MProblem -> Line -> IO (Maybe (MProblem, [LinePosition]))
 logicalLinesStep problem@(MProblem mb@(MBoard board) mrc mcc) (Line direction num set) = do
     elems <- getAssocs board
@@ -163,11 +127,6 @@ createNewLine_ (MConstraints mc) li set lineCell = do
           writeArray mc li newConstraints
           return (Just newCells)
 
-writeCell :: MBoard -> Direction -> Cell -> IO LinePosition
-writeCell (MBoard board) (Direction d) (Cell index@(Point ridx cidx) cell) = do
-    writeArray board index cell
-    return $ if d then LinePosition (Direction False) (LineIndex cidx) (CellIndex ridx) else LinePosition (Direction True) (LineIndex ridx) (CellIndex cidx)
-               
 equalLinePosition :: Line -> LinePosition -> Bool
 equalLinePosition (Line lb li _) (LinePosition rb ri _) = (lb == rb) && (li == ri)
 

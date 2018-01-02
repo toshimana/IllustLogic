@@ -4,19 +4,11 @@ import Test.Hspec
 import Data.Set
 
 import LogicalStep
+import ILFunc
 import ILData
     
-rangeConstraint :: [Int] -> (Int,Int) -> RangeConstraint
-rangeConstraint constraint (r1,r2) = RangeConstraint (Constraint constraint) (Range r1 r2)
-
 spec :: Spec
 spec = do
-  describe "createCandidates" $ do
-    it "simple" $ do
-      (createCandidatesFromRangeConstraint (rangeConstraint [3] (1,3))) `shouldBe` [Candidate [True,True,True]]
-    it "multi" $ do
-      (createCandidatesFromRangeConstraint (rangeConstraint [3] (1,5))) `shouldBe` [Candidate [True,True,True,False,False],Candidate [False,True,True,True,False],Candidate [False,False,True,True,True]]
-
   describe "solveConstraint" $ do
     it "test1" $ do
       let actual = solveConstraint (zipWith Cell [Point 1 x|x<-[1..]] (Prelude.map CellElt [Nothing,Nothing,Nothing,Nothing,Nothing])) (rangeConstraint [3] (1,5))

@@ -25,11 +25,14 @@ instance Num CellIndex where
 
 newtype Constraints = Constraints [RangeConstraint] deriving (Eq, Show)
     
+newtype Candidate = Candidate [Bool] deriving (Show,Eq)
+
 newtype LineIndex = LineIndex Int deriving (Ix, Ord, Eq)
 newtype Direction = Direction Bool deriving (Eq)
 newtype CellIndices = CellIndices (Set CellIndex)
 data Line = Line Direction LineIndex CellIndices
 
+newtype BoardLine = BoardLine [CellElt]
 data LinePosition = LinePosition Direction LineIndex CellIndex
 
 newtype MConstraints = MConstraints (IOArray LineIndex Constraints)

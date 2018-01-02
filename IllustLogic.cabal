@@ -17,6 +17,8 @@ library
   hs-source-dirs:      src
   exposed-modules:     Lib
                      , LogicalStep
+                     , EstimateStep
+                     , ILFunc
                      , ILData
   build-depends:       base >= 4.7 && < 5
                      , containers
