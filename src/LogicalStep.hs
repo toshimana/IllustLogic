@@ -21,35 +21,23 @@ getRangeList (Range lb ub) = Prelude.map CellIndex [lb..ub]
 splitConstraint :: ConstraintIndex -> Constraint -> (Constraint, Constraint)
 splitConstraint (ConstraintIndex i) (Constraint cs) = let (a,b) = L.splitAt i cs in (Constraint a, Constraint b)
 
-divideCandidates :: Int -> Candidates -> (Candidates, Candidates)
-divideCandidates n (Candidates cs) =
-    let (as, bs) = L.foldr f ([],[]) cs in
-    (Candidates as, Candidates bs)
-    where
-      f (Candidate c) (acur,ecur) =
-          let (a,b) = L.splitAt (n-1) c in
-          let (d,e) = L.splitAt 1 b in
-          ((Candidate a):acur, (Candidate e):ecur)
-
-headCandidates :: Candidates -> Candidate
-headCandidates (Candidates cs) = head cs
+divideCandidate :: Int -> Candidate -> (Candidate, Candidate)
+divideCandidate n (Candidate c) =
+    let (a,b) = L.splitAt (n-1) c in
+    let (d,e) = L.splitAt 1 b in
+    (Candidate a, Candidate e)
           
 divideRangeConstraint :: RangeConstraint -> [(ConstraintIndex,CellIndex)] -> [RangeConstraint]
-divideRangeConstraint (RangeConstraint xs range fc rc) [] =
-    let newFrontCandidates = createCandidatesFromCandidate xs (headCandidates fc) in
-    let newRearCandidates = createCandidatesRevFromCandidate xs (headCandidates rc) in
-    [RangeConstraint xs range newFrontCandidates newRearCandidates]
+divideRangeConstraint rc [] = [rc]
 divideRangeConstraint (RangeConstraint xs (Range lb ub) fc rc) ((ci@(ConstraintIndex c),ii@(CellIndex i)):cs) =
     let (a,b) = splitConstraint ci xs in
     let len = i-lb+1 in
-    let (frontCandidates, frontRest) = divideCandidates len fc in
-    let (rearCandidates, rearRest) = divideCandidates len rc in
+    let (frontCandidate, frontRest) = divideCandidate len fc in
+    let (rearCandidate, rearRest) = divideCandidate len rc in
     let newCs = Prelude.map (\(ConstraintIndex n,j) -> (ConstraintIndex (n-c),j)) cs in
     let rest = divideRangeConstraint (RangeConstraint b (Range (i+1) ub) frontRest rearRest) newCs in
     let range = (Range lb (i-1)) in
-    let newFrontCandidates = createCandidatesFromCandidate a (headCandidates frontCandidates) in
-    let newRearCandidates = createCandidatesRevFromCandidate a (headCandidates rearCandidates) in
-    (RangeConstraint a range newFrontCandidates newRearCandidates) : rest
+    (RangeConstraint a range frontCandidate rearCandidate) : rest
 
 labeling :: Candidate -> LabelLine
 labeling (Candidate list) = LabelLine (f list 0)
@@ -97,13 +85,14 @@ matchBlack (Candidate xs) (Candidate ys) = Candidate $ impl xs ys
       impl [] [] = []
       impl (x:xs) (y:ys) = (x && y) : (impl xs ys)
                                    
-searchBlack :: Constraint -> BoardLine -> Int -> Candidate
+searchBlack :: Constraint -> BoardLine -> Int -> Maybe Candidate
 searchBlack (Constraint constraint) inBlack@(BoardLine bl) con =
     let len = L.length bl in
     let candidates = createCandidates len (Constraint [con]) con in
     let frontCandidates = scanCandidates candidates inBlack in
     let rearCandidates = scanCandidates (reverseEltCandidates candidates) inBlack in
-    matchBlack (headCandidates frontCandidates) (headCandidates rearCandidates)
+    if nullCandidates frontCandidates then Nothing
+    else Just $ matchBlack (headCandidates frontCandidates) (headCandidates rearCandidates)
                
 mergeBlack :: [CellElt] -> Candidate -> [CellElt]
 mergeBlack cur (Candidate xs) = L.zipWith (\(CellElt c) -> \b -> let e = if b then Just True else c in (CellElt e)) cur xs
@@ -116,7 +105,8 @@ seekPotentialBlack constraint@(Constraint cs) whiteList (Just (n,m)) (CellElt (J
     let indices = L.map (\a -> div a 2) [m,m+2..n] in
     let cons = T.fromList$ L.map (\i -> cs !! i) indices in
     let results = Prelude.map (searchBlack constraint inBlack) (T.toList cons) in
-    Just . Candidate $ Prelude.map and $ transpose $ Prelude.map (\(Candidate c) -> c) results
+    if any isNothing results then Nothing
+    else Just . Candidate $ Prelude.map and $ transpose $ Prelude.map (\(Candidate c) -> c) $ catMaybes results 
 seekPotentialBlack _ _ _ _ _ = Nothing
                    
 checkPotentialBlack :: Constraint -> [Maybe (Int, Int)] -> BoardLine -> BoardLine
@@ -146,21 +136,23 @@ diffLine cs (BoardLine bd) = L.foldr impl [] (L.zip cs bd)
       impl (c@(Cell p (CellElt e1)), b@(CellElt e2)) cur = if (isNothing e1) && (isJust e2) then (Cell p b):cur else cur 
                                  
 solveConstraint :: [Cell] -> RangeConstraint -> Maybe ([Cell], Constraints)
-solveConstraint cells rc@(RangeConstraint constraint bound frontCandidates rearCandidates) =
+solveConstraint cells rc@(RangeConstraint constraint bound frontCandidate rearCandidate) =
    let targetCells = rangeList bound cells in
    let lineStates = BoardLine $ Prelude.map (\(Cell _ ce) -> ce) targetCells in
-   let frontValidCandidates = scanCandidates frontCandidates lineStates in
-   let rearValidCandidates = scanCandidates rearCandidates lineStates in
+   let frontValidCandidates = scanCandidates (createCandidatesFromCandidate constraint frontCandidate) lineStates in
+   let rearValidCandidates = scanCandidates (createCandidatesRevFromCandidate constraint rearCandidate) lineStates in
    if nullCandidates frontValidCandidates then Nothing
    else
-       let frontLabelCandidate = labeling $ headCandidates frontValidCandidates in
-       let rearLabelCandidate = labeling $ headCandidates rearValidCandidates in
+       let frontValidCandidate = headCandidates frontValidCandidates in
+       let rearValidCandidate = headCandidates rearValidCandidates in
+       let frontLabelCandidate = labeling frontValidCandidate in
+       let rearLabelCandidate = labeling rearValidCandidate in
        let matchLine = match frontLabelCandidate rearLabelCandidate in
        let newLine = mergeNewLine targetCells matchLine in
        let potentialBlack = findPotentialBlack frontLabelCandidate rearLabelCandidate in
        let pbMatchLine = checkPotentialBlack constraint potentialBlack newLine in
        let newCells = diffLine targetCells pbMatchLine in
-       let targetRangeConstraint = RangeConstraint constraint bound frontValidCandidates rearValidCandidates in
+       let targetRangeConstraint = RangeConstraint constraint bound frontValidCandidate rearValidCandidate in
        let newRangeConstraint = createNewConstraints targetRangeConstraint matchLine in
        Just (newCells, Constraints newRangeConstraint)
 

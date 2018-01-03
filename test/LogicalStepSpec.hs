@@ -11,10 +11,10 @@ spec :: Spec
 spec = do
   describe "divideRangeConstraint" $ do
     it "test1" $ do
-         let fc = Candidates [Candidate [False,True,False,False],Candidate [False,False,True,False]]
-         let rc = Candidates [Candidate [False,False,True,False],Candidate [False,True,False,False]]
+         let fc = Candidate [False,True,False,False]
+         let rc = Candidate [False,False,True,False]
          let actual = divideRangeConstraint (RangeConstraint (Constraint [1]) (Range 1 4) fc rc) [(ConstraintIndex 0,CellIndex 1),(ConstraintIndex 1, CellIndex 4)]
-         let expect = [RangeConstraint (Constraint []) (Range 1 0) (Candidates [Candidate []]) (Candidates [Candidate []]),RangeConstraint (Constraint [1]) (Range 2 3) (Candidates [Candidate [True,False],Candidate [False,True]]) (Candidates [Candidate [False,True],Candidate [True,False]]),RangeConstraint (Constraint []) (Range 5 4) (Candidates [Candidate []]) (Candidates [Candidate []])]
+         let expect = [RangeConstraint (Constraint []) (Range 1 0) (Candidate []) (Candidate []),RangeConstraint (Constraint [1]) (Range 2 3) (Candidate [True,False]) (Candidate [False,True]),RangeConstraint (Constraint []) (Range 5 4) (Candidate []) (Candidate [])]
          actual `shouldBe` expect 
 
   describe "solveConstraint" $ do
@@ -35,7 +35,7 @@ spec = do
 
     it "test4" $ do
       let actual = solveConstraint (zipWith Cell [Point 1 x|x<-[1..]] (Prelude.map CellElt [Just False, Just True, Just False, Just True, Just False, Just True])) (createRangeConstraint [1,1,1] (Range 2 6))
-      let expect = Just ([],Constraints [])
+      let expect = Nothing
       actual `shouldBe` expect
 
     it "test5" $ do

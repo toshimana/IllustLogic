@@ -71,10 +71,10 @@ unconfirmedLists :: [Cell] -> Candidates -> [[Cell]]
 unconfirmedLists bl (Candidates candidates) = Prelude.map (unconfirmedList bl) candidates
    
 createEstimateCells :: IBoard -> Direction -> LineIndex -> RangeConstraint -> [[Cell]]
-createEstimateCells ib di li rc@(RangeConstraint _ _ frontCandidates rearCandidates) =
+createEstimateCells ib di li rc@(RangeConstraint constraint _ frontCandidate rearCandidate) =
   let targetCell = createRegionCell ib di li rc in
   let bl = BoardLine (Prelude.map cellElt targetCell) in
-  let newLines = scanCandidates frontCandidates bl in
+  let newLines = scanCandidates (createCandidatesFromCandidate constraint frontCandidate) bl in
   unconfirmedLists targetCell newLines
          
 refineConstraint :: MConstraints -> Bool -> IO [(Direction, LineIndex, RangeConstraint)]

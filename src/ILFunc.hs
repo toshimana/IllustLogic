@@ -24,6 +24,9 @@ adaptLine (BoardLine bline) (Candidate xs) = and $ L.zipWith f bline xs
 getLength :: Range -> Int
 getLength (Range lb ub) = ub - lb + 1
 
+headCandidates :: Candidates -> Candidate
+headCandidates (Candidates cs) = head cs
+          
 reverseConstraint :: Constraint -> Constraint
 reverseConstraint (Constraint cs) = Constraint (L.reverse cs)
 
@@ -37,8 +40,8 @@ scanCandidates :: Candidates -> BoardLine -> Candidates
 scanCandidates (Candidates candidates) lineStates =
     Candidates (Prelude.dropWhile (not . (adaptLine lineStates)) candidates)
 
-rangeConstraint :: [Int] -> (Int,Int) -> [[Bool]] -> [[Bool]] -> RangeConstraint
-rangeConstraint constraint (r1,r2) fc rc = RangeConstraint (Constraint constraint) (Range r1 r2) (Candidates $ Prelude.map Candidate fc) (Candidates $ Prelude.map Candidate rc)
+rangeConstraint :: [Int] -> (Int,Int) -> [Bool] -> [Bool] -> RangeConstraint
+rangeConstraint constraint (r1,r2) fc rc = RangeConstraint (Constraint constraint) (Range r1 r2) (Candidate fc) (Candidate rc)
 
 createLineFromBoard :: [Cell] -> Direction -> LineIndex -> [Cell]
 createLineFromBoard elements (Direction d) (LineIndex li) =
@@ -92,6 +95,6 @@ createRangeConstraint c range =
     let constraint = Constraint c in
     let len = getLength range in
     let vol = volume constraint in
-    let frontCandidates = createCandidates len constraint vol in
-    let rearCandidates = reverseEltCandidates $ createCandidates len (reverseConstraint constraint) vol in
-    RangeConstraint constraint range frontCandidates rearCandidates
+    let frontCandidate = headCandidates $ createCandidates len constraint vol in
+    let rearCandidate = headCandidates $ reverseEltCandidates $ createCandidates len (reverseConstraint constraint) vol in
+    RangeConstraint constraint range frontCandidate rearCandidate
