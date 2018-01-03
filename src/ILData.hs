@@ -25,7 +25,7 @@ instance Num CellIndex where
 
 newtype Constraints = Constraints [RangeConstraint] deriving (Eq, Show)
     
-newtype Candidate = Candidate [Bool] deriving (Show,Eq)
+newtype Candidate = Candidate [Bool] deriving (Show,Eq,Ord)
 newtype Candidates = Candidates [Candidate] deriving (Eq, Show)
     
 newtype LineIndex = LineIndex Int deriving (Ix, Ord, Eq)

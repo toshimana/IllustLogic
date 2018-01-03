@@ -33,17 +33,6 @@ solve depth sp = logicalStep sp >>= maybe (return []) next
       estimate logicProblem = 
         estimateStep logicProblem >>= Prelude.mapM (\newp->solve (incr depth) newp) >>= return.concat
 
-printArray :: MBoard -> IO ()
-printArray (MBoard mb) = do
-  (_,(Point _ clen)) <- getBounds mb
-  getElems mb >>= putStr . unlines . f clen . Prelude.map g >> putChar '\n'
-      where
-        f collen [] = []
-        f collen xs = let (a,b) = L.splitAt collen xs in a:f collen b
-        g (CellElt Nothing) = '-'
-        g (CellElt (Just True)) = 'X'
-        g (CellElt (Just False)) = ' '
-
 createChangeLines :: Bool -> Int -> Int -> ChangeLines
 createChangeLines d w n = ChangeLines (createChangeLines_ d w n)
   where

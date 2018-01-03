@@ -35,7 +35,7 @@ spec = do
 
     it "test4" $ do
       let actual = solveConstraint (zipWith Cell [Point 1 x|x<-[1..]] (Prelude.map CellElt [Just False, Just True, Just False, Just True, Just False, Just True])) (createRangeConstraint [1,1,1] (Range 2 6))
-      let expect = Nothing
+      let expect = Just ([],Constraints [])
       actual `shouldBe` expect
 
     it "test5" $ do

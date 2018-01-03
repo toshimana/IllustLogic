@@ -78,7 +78,7 @@ createCandidatesFromCandidate (Constraint constraint) (Candidate candidate) =
           let whiteList = Prelude.map (\n -> a++False:n) (createCandidatesImpl (len-wlen-1) (Constraint con) vol) in
           case compare (len-wlen) vol of
             LT -> []
-            EQ -> if L.null xs then [L.replicate x True] else blackList
+            EQ -> if L.null xs then [a ++ (L.replicate x True)] else blackList
             GT -> blackList ++ whiteList
 
 createCandidatesRevFromCandidate :: Constraint -> Candidate -> Candidates
@@ -98,3 +98,16 @@ createRangeConstraint c range =
     let frontCandidate = headCandidates $ createCandidates len constraint vol in
     let rearCandidate = headCandidates $ reverseEltCandidates $ createCandidates len (reverseConstraint constraint) vol in
     RangeConstraint constraint range frontCandidate rearCandidate
+
+printArray :: MBoard -> IO ()
+printArray (MBoard mb) = do
+  (_,(Point _ clen)) <- getBounds mb
+  getElems mb >>= putStr . unlines . f clen . Prelude.map g >> putChar '\n'
+      where
+        f collen [] = []
+        f collen xs = let (a,b) = L.splitAt collen xs in a:f collen b
+        g (CellElt Nothing) = '-'
+        g (CellElt (Just True)) = 'X'
+        g (CellElt (Just False)) = ' '
+
+                    

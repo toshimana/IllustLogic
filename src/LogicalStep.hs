@@ -78,7 +78,6 @@ findPotentialBlack (LabelLine xs) (LabelLine ys) = findPotentialBlackImpl xs ys
 replaceList :: Int -> [a] -> a -> [a]
 replaceList n xs elt = let (a,b) = L.splitAt (n-1) xs in a ++ (elt:(tail b)) 
 
-
 matchBlack :: Candidate -> Candidate -> Candidate
 matchBlack (Candidate xs) (Candidate ys) = Candidate $ impl xs ys
     where
@@ -91,7 +90,7 @@ searchBlack (Constraint constraint) inBlack@(BoardLine bl) con =
     let candidates = createCandidates len (Constraint [con]) con in
     let frontCandidates = scanCandidates candidates inBlack in
     let rearCandidates = scanCandidates (reverseEltCandidates candidates) inBlack in
-    if nullCandidates frontCandidates then Nothing
+    if (nullCandidates frontCandidates) || (nullCandidates rearCandidates) then Nothing
     else Just $ matchBlack (headCandidates frontCandidates) (headCandidates rearCandidates)
                
 mergeBlack :: [CellElt] -> Candidate -> [CellElt]
@@ -134,20 +133,33 @@ diffLine cs (BoardLine bd) = L.foldr impl [] (L.zip cs bd)
     where
       impl :: (Cell,  CellElt) -> [Cell] -> [Cell]
       impl (c@(Cell p (CellElt e1)), b@(CellElt e2)) cur = if (isNothing e1) && (isJust e2) then (Cell p b):cur else cur 
-                                 
+
+takeWhileCandidates :: (Candidate -> Bool) -> Candidates -> Candidates
+takeWhileCandidates pred (Candidates cs) = Candidates $ takeWhile pred cs
+
+lengthCandidate :: Candidate -> Int
+lengthCandidate (Candidate c) = L.length c
+                                           
 solveConstraint :: [Cell] -> RangeConstraint -> Maybe ([Cell], Constraints)
 solveConstraint cells rc@(RangeConstraint constraint bound frontCandidate rearCandidate) =
    let targetCells = rangeList bound cells in
+   if L.null targetCells then undefined
+   else
    let lineStates = BoardLine $ Prelude.map (\(Cell _ ce) -> ce) targetCells in
    let frontValidCandidates = scanCandidates (createCandidatesFromCandidate constraint frontCandidate) lineStates in
    let rearValidCandidates = scanCandidates (createCandidatesRevFromCandidate constraint rearCandidate) lineStates in
-   if nullCandidates frontValidCandidates then Nothing
+   if (nullCandidates frontValidCandidates) || (nullCandidates rearValidCandidates) then Nothing
    else
        let frontValidCandidate = headCandidates frontValidCandidates in
        let rearValidCandidate = headCandidates rearValidCandidates in
+       if (lengthCandidate frontValidCandidate) /= (lengthCandidate rearValidCandidate) then undefined
+       else if (L.length targetCells) /= (lengthCandidate frontValidCandidate) then undefined
+       else
        let frontLabelCandidate = labeling frontValidCandidate in
        let rearLabelCandidate = labeling rearValidCandidate in
        let matchLine = match frontLabelCandidate rearLabelCandidate in
+       if (L.length targetCells) /= (L.length $ (\(MatchLine m) -> m) matchLine) then undefined
+       else
        let newLine = mergeNewLine targetCells matchLine in
        let potentialBlack = findPotentialBlack frontLabelCandidate rearLabelCandidate in
        let pbMatchLine = checkPotentialBlack constraint potentialBlack newLine in
@@ -175,7 +187,7 @@ logicalLinesStep problem@(MProblem mb@(MBoard board) mrc mcc) (Line direction nu
       choiceConstraint (Direction d) = bool mcc mrc d
       writeCells rewriteCells = do
         newLines <- Prelude.mapM (writeCell mb direction) rewriteCells
---         if L.null newLines then return () else printArray mb
+--        if L.null newLines then return () else printArray mb
         return (Just (problem, newLines))
 
 createNewLine_ :: MConstraints -> LineIndex -> CellIndices -> [Cell] -> IO (Maybe [Cell])
