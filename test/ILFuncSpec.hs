@@ -7,10 +7,9 @@ import ILData
 
 spec :: Spec
 spec = do
-  describe "createCandidates" $ do
-    it "simple" $ do
-      (createCandidatesFromRangeConstraint (rangeConstraint [3] (1,3))) `shouldBe` [Candidate [True,True,True]]
-    it "multi" $ do
-      (createCandidatesFromRangeConstraint (rangeConstraint [3] (1,5))) `shouldBe` [Candidate [True,True,True,False,False],Candidate [False,True,True,True,False],Candidate [False,False,True,True,True]]
+  describe "createCandidatesFromCandidates" $ do
+         it "test1" $ do
+           (createCandidatesFromCandidate (Constraint [1]) (Candidate [False,True,False])) `shouldBe` (Candidates [Candidate [False,True,False], Candidate [False, False, True]])
 
-  
+         it "test2" $ do
+           (createCandidatesFromCandidate (Constraint [1,1]) (Candidate [False,True,False,False,True,False])) `shouldBe` (Candidates [Candidate [False,True,False,False,True,False],Candidate [False,True,False,False,False,True],Candidate [False,False,True,False,True,False],Candidate [False,False,True,False,False,True],Candidate [False,False,False,True,False,True]])

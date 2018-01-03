@@ -6,9 +6,10 @@ import Data.Maybe
 import Data.Set as T
 import Data.Bool (bool)
 import Data.Sequence as S
-import Data.List as L (sortBy, groupBy, zipWith, replicate, null, reverse, splitAt, zip, foldl1',foldl',intersperse, minimumBy, delete, partition)
+import Data.List as L
 
 import ILData
+import ILFunc
 import LogicalStep
 import EstimateStep    
 
@@ -59,17 +60,21 @@ toResult (MBoard mb) = undefined
 append :: ChangeLines -> ChangeLines -> ChangeLines
 append (ChangeLines l) (ChangeLines r) = ChangeLines (l >< r)
 
+createInitRangeConstraints :: Int -> [Int] -> Constraints
+createInitRangeConstraints num c =
+    Constraints [createRangeConstraint c (Range 1 num)]
+
 solveIllustLogic :: [[Int]] -> [[Int]] -> IO [IOArray (Int,Int) Bool]
 solveIllustLogic rowConstraintRaw colConstraintRaw = do
-    let (rlen,clen) = (Prelude.length rowConstraintRaw, Prelude.length colConstraintRaw)
-    let rc = Prelude.map (\n -> Constraints [RangeConstraint (Constraint n) (Range (1::Int) clen)]) rowConstraintRaw
-    let cc = Prelude.map (\n -> Constraints [RangeConstraint (Constraint n) (Range (1::Int) rlen)]) colConstraintRaw
-    rowConstraint <- newListArray (LineIndex 1, LineIndex rlen) rc
-    colConstraint <- newListArray (LineIndex 1, LineIndex clen) cc
-    mb <- newArray (Point 1 1, Point rlen clen) (CellElt Nothing)
-    let allLine = append (createChangeLines True clen rlen) (createChangeLines False rlen clen)
-    results <- solve (Depth 0) (SolvingProblem (MProblem (MBoard mb) (MConstraints rowConstraint) (MConstraints colConstraint)) allLine)
-    print "[[Result]]"
-    Prelude.mapM_ (\(Depth d,b) -> print d >> printArray b) results
-    return $ Prelude.map (\(_,b) -> toResult b) results
+  let (rlen,clen) = (Prelude.length rowConstraintRaw, Prelude.length colConstraintRaw)
+  let rc = Prelude.map (\n -> createInitRangeConstraints clen n) rowConstraintRaw
+  let cc = Prelude.map (\n -> createInitRangeConstraints rlen n) colConstraintRaw
+  rowConstraint <- newListArray (LineIndex 1, LineIndex rlen) rc
+  colConstraint <- newListArray (LineIndex 1, LineIndex clen) cc
+  mb <- newArray (Point 1 1, Point rlen clen) (CellElt Nothing)
+  let allLine = append (createChangeLines True clen rlen) (createChangeLines False rlen clen)
+  results <- solve (Depth 0) (SolvingProblem (MProblem (MBoard mb) (MConstraints rowConstraint) (MConstraints colConstraint)) allLine)
+  print "[[Result]]"
+  Prelude.mapM_ (\(Depth d,b) -> print d >> printArray b) results
+  return $ Prelude.map (\(_,b) -> toResult b) results
 

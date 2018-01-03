@@ -11,7 +11,7 @@ newtype CellElt = CellElt (Maybe Bool) deriving (Eq, Show)
 data Cell = Cell Point CellElt deriving (Eq, Show)
 
 newtype Constraint = Constraint [Int] deriving (Eq, Show)
-data RangeConstraint = RangeConstraint Constraint Range deriving (Eq, Show)
+data RangeConstraint = RangeConstraint Constraint Range Candidates Candidates deriving (Eq, Show)
 
 newtype CellIndex = CellIndex Int deriving (Ord, Eq)
 instance Num CellIndex where
@@ -26,7 +26,8 @@ instance Num CellIndex where
 newtype Constraints = Constraints [RangeConstraint] deriving (Eq, Show)
     
 newtype Candidate = Candidate [Bool] deriving (Show,Eq)
-
+newtype Candidates = Candidates [Candidate] deriving (Eq, Show)
+    
 newtype LineIndex = LineIndex Int deriving (Ix, Ord, Eq)
 newtype Direction = Direction Bool deriving (Eq)
 newtype CellIndices = CellIndices (Set CellIndex)

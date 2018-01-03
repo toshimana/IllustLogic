@@ -60,20 +60,23 @@ renewCell :: Cell -> Bool -> Cell
 renewCell (Cell i _) b = Cell i (CellElt (Just b))
 
 createRegionCell :: IBoard -> Direction -> LineIndex -> RangeConstraint -> [Cell]
-createRegionCell ib di li (RangeConstraint _ r) =
+createRegionCell ib di li (RangeConstraint _ r _ _) =
   let cells = getCells ib in rangeList r $ createLineFromBoard cells di li
-
-createEstimateCells :: IBoard -> Direction -> LineIndex -> RangeConstraint -> [[Cell]]
-createEstimateCells ib di li constraint =
-  let targetCell = createRegionCell ib di li constraint in
-  let bl = BoardLine (Prelude.map cellElt targetCell) in
-  let newLines = Prelude.filter (adaptLine bl) (createCandidatesFromRangeConstraint constraint) in
-  Prelude.map (unconfirmedList targetCell) newLines
 
 unconfirmedList :: [Cell] -> Candidate -> [Cell]
 unconfirmedList bl (Candidate candidate) = 
   L.foldl' (\cur (c,i) -> if isConfirmedCell c then cur else (renewCell c i):cur) [] (L.zip bl candidate)
 
+unconfirmedLists :: [Cell] -> Candidates -> [[Cell]]
+unconfirmedLists bl (Candidates candidates) = Prelude.map (unconfirmedList bl) candidates
+   
+createEstimateCells :: IBoard -> Direction -> LineIndex -> RangeConstraint -> [[Cell]]
+createEstimateCells ib di li rc@(RangeConstraint _ _ frontCandidates rearCandidates) =
+  let targetCell = createRegionCell ib di li rc in
+  let bl = BoardLine (Prelude.map cellElt targetCell) in
+  let newLines = scanCandidates frontCandidates bl in
+  unconfirmedLists targetCell newLines
+         
 refineConstraint :: MConstraints -> Bool -> IO [(Direction, LineIndex, RangeConstraint)]
 refineConstraint (MConstraints mc) flg = do
   as <- getAssocs mc 
@@ -85,7 +88,7 @@ getSmallestCostConstraint mrc mcc = do
   cc <- refineConstraint mcc False
   return $ minimumBy (\a b -> compare (calcCost a) (calcCost b)) (rc++cc)
   where
-    calcCost (_,_,(RangeConstraint cs r)) = cvolume cs r
+    calcCost (_,_,(RangeConstraint cs r _ _)) = cvolume cs r
 
 rewriteConstraint :: MConstraints -> LineIndex -> RangeConstraint -> IO ()
 rewriteConstraint (MConstraints c) li constraint = do
