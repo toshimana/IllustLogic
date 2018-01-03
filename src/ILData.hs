@@ -33,7 +33,7 @@ newtype Direction = Direction Bool deriving (Eq)
 newtype CellIndices = CellIndices (Set CellIndex)
 data Line = Line Direction LineIndex CellIndices
 
-newtype BoardLine = BoardLine [CellElt]
+newtype BoardLine = BoardLine [CellElt] deriving (Eq, Show)
 data LinePosition = LinePosition Direction LineIndex CellIndex
 
 newtype MConstraints = MConstraints (IOArray LineIndex Constraints)

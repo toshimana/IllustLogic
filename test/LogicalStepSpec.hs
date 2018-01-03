@@ -43,6 +43,11 @@ spec = do
       let expect = Just ([],Constraints [createRangeConstraint [1,1] (Range 1 5)])
       actual `shouldBe` expect
 
+    it "test6" $ do
+      let actual = solveConstraint (zipWith Cell [Point 1 x|x<-[1..]] (Prelude.map CellElt [Nothing, Nothing, Just False, Just True, Nothing, Just False, Nothing, Nothing])) (createRangeConstraint [2,2] (Range 1 8))
+      let expect = Just ([Cell (Point 1 5) (CellElt (Just True))],Constraints [createRangeConstraint [2,2] (Range 1 8)])
+      actual `shouldBe` expect
+
   describe "createNewLine" $ do
     it "test1" $ do
       let actual = createNewLine (zipWith Cell [Point 1 x|x<-[1..]] (Prelude.map CellElt [Nothing,Nothing,Just True,Nothing,Nothing])) (CellIndices (fromList [3])) (Constraints [createRangeConstraint [3] (Range 1 5)])
@@ -54,3 +59,8 @@ spec = do
       let expect = Just ([Cell (Point 1 7) (CellElt $ Just False)],Constraints [createRangeConstraint [3] (Range 1 4)])
       actual `shouldBe` expect
 
+  describe "checkPotentialBlack" $ do
+    it "test1" $ do
+      let actual = checkPotentialBlack (Constraint [2,2]) [Nothing,Nothing,Nothing,Just (3,1),Just (3,1),Nothing,Nothing,Nothing] (BoardLine $ Prelude.map CellElt [Nothing, Nothing, Just False, Just True, Nothing, Just False, Nothing, Nothing])
+      let expect = (BoardLine $ Prelude.map CellElt [Nothing, Nothing, Just False, Just True, Just True, Just False, Nothing, Nothing])
+      actual `shouldBe` expect
