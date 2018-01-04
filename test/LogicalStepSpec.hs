@@ -48,6 +48,12 @@ spec = do
       let expect = Just ([Cell (Point 1 5) (CellElt (Just True))],Constraints [createRangeConstraint [2,2] (Range 1 8)])
       actual `shouldBe` expect
 
+    it "test7" $ do
+      let boardLine = Prelude.map CellElt [Nothing, Nothing, Nothing, Nothing, Nothing, Just False, Nothing, Just False, Nothing, Nothing]
+      let actual = solveConstraint (zipWith Cell [Point 1 x|x<-[1..]] boardLine) (createRangeConstraint [2,2] (Range 1 10))
+      let expect = Just ([Cell (Point 1 7) (CellElt (Just False))],Constraints [RangeConstraint (Constraint [2,2]) (Range 1 10) (Candidate [True,True,False,True,True,False,False,False,False,False]) (Candidate [False,False,False,True,True,False,False,False,True,True])])
+      actual `shouldBe` expect
+
   describe "createNewLine" $ do
     it "test1" $ do
       let actual = createNewLine (zipWith Cell [Point 1 x|x<-[1..]] (Prelude.map CellElt [Nothing,Nothing,Just True,Nothing,Nothing])) (CellIndices (fromList [3])) (Constraints [createRangeConstraint [3] (Range 1 5)])

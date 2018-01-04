@@ -102,10 +102,8 @@ seekPotentialBlack constraint@(Constraint cs) whiteList (Just (n,m)) (CellElt (J
     let len = L.length whiteList in
     let inBlack = BoardLine $ replaceList i whiteList (CellElt (Just True)) in
     let indices = L.map (\a -> div a 2) [m,m+2..n] in
-    let cons = T.fromList$ L.map (\i -> cs !! i) indices in
-    let results = Prelude.map (searchBlack constraint inBlack) (T.toList cons) in
-    if any isNothing results then Nothing
-    else Just . Candidate $ Prelude.map and $ transpose $ Prelude.map (\(Candidate c) -> c) $ catMaybes results 
+    let con = minimum $ L.map (\i -> cs !! i) indices in
+    searchBlack constraint inBlack con
 seekPotentialBlack _ _ _ _ _ = Nothing
                    
 checkPotentialBlack :: Constraint -> [Maybe (Int, Int)] -> BoardLine -> BoardLine
@@ -139,7 +137,41 @@ takeWhileCandidates pred (Candidates cs) = Candidates $ takeWhile pred cs
 
 lengthCandidate :: Candidate -> Int
 lengthCandidate (Candidate c) = L.length c
-                                           
+
+findPotentialWhite :: LabelLine -> LabelLine -> [Maybe (Int,Int)]
+findPotentialWhite (LabelLine xs) (LabelLine ys) = impl xs ys
+    where
+      impl [] [] = []
+      impl (x:xs) (y:ys) =
+          let result = if (even x) && (even y) && (x /= y) then Just (x, y) else Nothing in
+          result : impl xs ys
+
+mergeWhite :: CellElt -> Bool -> CellElt
+mergeWhite c b = if b then CellElt (Just False) else c
+                                                                
+searchWhite :: Constraint -> BoardLine -> Int -> Bool
+searchWhite (Constraint constraint) inBlack@(BoardLine bl) con =
+    let len = L.length bl in
+    let candidates = createCandidates len (Constraint [con]) con in
+    let frontCandidates = scanCandidates candidates inBlack in
+    (nullCandidates frontCandidates)
+    
+seekPotentialWhite :: Constraint -> [CellElt] -> Maybe (Int,Int) -> CellElt -> Int -> Bool
+seekPotentialWhite _ _ Nothing _ _ = False
+seekPotentialWhite constraint@(Constraint cs) whiteList (Just (n,m)) (CellElt Nothing) i =
+    let len = L.length whiteList in
+    let inBlack = BoardLine $ replaceList i whiteList (CellElt (Just True)) in
+    let indices = L.map (\a -> div a 2) [m,m+2..n-1] in
+    let con = minimum $ L.map (\i -> cs !! i) indices in
+    searchWhite constraint inBlack con
+seekPotentialWhite _ _ _ _ _ = False
+
+checkPotentialWhite :: Constraint -> [Maybe (Int,Int)] -> BoardLine -> BoardLine
+checkPotentialWhite constraint pbs (BoardLine ml) =
+    BoardLine $ L.zipWith mergeWhite ml $ L.zipWith3 (seekPotentialWhite constraint whiteList) pbs ml [1..]
+    where
+      whiteList = L.map (\b -> if b == (CellElt (Just True)) then CellElt Nothing else b) ml
+                     
 solveConstraint :: [Cell] -> RangeConstraint -> Maybe ([Cell], Constraints)
 solveConstraint cells rc@(RangeConstraint constraint bound frontCandidate rearCandidate) =
    let targetCells = rangeList bound cells in
@@ -152,18 +184,15 @@ solveConstraint cells rc@(RangeConstraint constraint bound frontCandidate rearCa
    else
        let frontValidCandidate = headCandidates frontValidCandidates in
        let rearValidCandidate = headCandidates rearValidCandidates in
-       if (lengthCandidate frontValidCandidate) /= (lengthCandidate rearValidCandidate) then undefined
-       else if (L.length targetCells) /= (lengthCandidate frontValidCandidate) then undefined
-       else
        let frontLabelCandidate = labeling frontValidCandidate in
        let rearLabelCandidate = labeling rearValidCandidate in
        let matchLine = match frontLabelCandidate rearLabelCandidate in
-       if (L.length targetCells) /= (L.length $ (\(MatchLine m) -> m) matchLine) then undefined
-       else
        let newLine = mergeNewLine targetCells matchLine in
        let potentialBlack = findPotentialBlack frontLabelCandidate rearLabelCandidate in
        let pbMatchLine = checkPotentialBlack constraint potentialBlack newLine in
-       let newCells = diffLine targetCells pbMatchLine in
+       let potentialWhite = findPotentialWhite frontLabelCandidate rearLabelCandidate in
+       let pwMatchLine = checkPotentialWhite constraint potentialWhite pbMatchLine in 
+       let newCells = diffLine targetCells pwMatchLine in
        let targetRangeConstraint = RangeConstraint constraint bound frontValidCandidate rearValidCandidate in
        let newRangeConstraint = createNewConstraints targetRangeConstraint matchLine in
        Just (newCells, Constraints newRangeConstraint)
